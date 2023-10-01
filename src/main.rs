@@ -3,19 +3,25 @@
 
 mod highlighting;
 pub mod compiler;
+pub mod instruction_set;
+mod executor;
 
 use eframe::egui;
-use eframe::egui::Key::P;
+use lazy_regex::{regex_captures, regex_is_match};
+use crate::compiler::{Compiler, ErrorsHighlightInfo};
 use crate::highlighting::{CodeTheme, highlight};
 
+// fn main() {
+//     dbg!(regex_captures!(r"^p([0-9]|10|11|12|13|14|15)$", "p115"));
+// }
+
 fn main() -> Result<(), eframe::Error> {
-    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
     let options = eframe::NativeOptions {
         initial_window_size: Some(egui::vec2(320.0, 240.0)),
         ..Default::default()
     };
     eframe::run_native(
-        "My egui App",
+        "Rustanel – a rusty panel with light bulbs",
         options,
         Box::new(|_cc| Box::<MyApp>::default()),
     )
@@ -23,30 +29,31 @@ fn main() -> Result<(), eframe::Error> {
 
 struct MyApp {
     code: String,
+    compiler: Compiler,
 }
 
 impl Default for MyApp {
     fn default() -> Self {
         Self {
-            code: "mov eax, 5\nadd r0, r1".into(),
+            code: "mov r0, 5\nmov (r0), (r1)+\nstop\ndhqu dwqj 903".into(),
+            compiler: Compiler::build(),
         }
     }
 }
 
 impl MyApp {
-    fn code_editor(&mut self, ui: &mut egui::Ui, theme: &CodeTheme) {
+    fn code_editor_ui(&mut self, ui: &mut egui::Ui, theme: &CodeTheme, errors: &ErrorsHighlightInfo) {
+        theme.apply_bg_color(ui);
         let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
-            let mut layout_job = highlight(ui.ctx(), theme, string);
+            let mut layout_job = highlight(ui.ctx(), theme, string, errors);
             layout_job.wrap.max_width = wrap_width;
             ui.fonts(|f| f.layout_job(layout_job))
         };
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.add(
                 egui::TextEdit::multiline(&mut self.code)
-                    .font(egui::TextStyle::Monospace) // for cursor height
                     .code_editor()
                     .desired_rows(1)
-                    .lock_focus(true)
                     .desired_width(ui.available_width() * 0.5)
                     .layouter(&mut layouter),
             );
@@ -57,8 +64,8 @@ impl MyApp {
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.set_pixels_per_point(3.0);
+        let errors = self.compiler.compile_code(&self.code);
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("My egui Application");
             let mut theme = CodeTheme::from_memory(ui.ctx());
             ui.collapsing("Theme", |ui| {
                 ui.group(|ui| {
@@ -66,9 +73,18 @@ impl eframe::App for MyApp {
                     theme.clone().store_in_memory(ui.ctx());
                 });
             });
-            ui.horizontal(|ui| {
-                self.code_editor(ui, &theme);
-                code_view_ui(ui, &theme, &self.code);
+            ui.horizontal_top(|ui| {
+                self.code_editor_ui(ui, &theme, &errors);
+                let mut program_text = String::with_capacity(3000);
+                for i in (0..self.compiler.program.len()) {
+                    program_text += format!("{:#04x}", self.compiler.program[i])[2..].to_ascii_uppercase().as_str();
+                    if (i & 0b111) == 0b111 {
+                        program_text += "\n";
+                    } else {
+                        program_text += " ";
+                    }
+                }
+                code_view_ui(ui, &theme, &mut program_text);
             });
         });
     }
@@ -79,20 +95,16 @@ pub fn code_view_ui(
     ui: &mut egui::Ui,
     theme: &CodeTheme,
     mut code: &str,
-) -> egui::Response {
-    let mut layouter = |ui: &egui::Ui, string: &str, _wrap_width: f32| {
-        let layout_job = highlight(ui.ctx(), theme, string);
-        // layout_job.wrap.max_width = wrap_width; // no wrapping
-        ui.fonts(|f| f.layout_job(layout_job))
-    };
+) {
+    theme.apply_bg_color(ui);
 
-    ui.add(
-        egui::TextEdit::multiline(&mut code)
-            .font(egui::TextStyle::Monospace) // for cursor height
-            .code_editor()
-            .desired_rows(1)
-            .lock_focus(true)
-            .layouter(&mut layouter),
-    )
+    ui.push_id(99999, |ui| {
+        egui::ScrollArea::vertical().min_scrolled_height(ui.available_height()).show(ui, |ui| {
+            ui.add(
+                egui::TextEdit::multiline(&mut code)
+                    .code_editor()
+                    .desired_rows(1)
+            );
+        });
+    });
 }
-
