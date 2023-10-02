@@ -1,4 +1,3 @@
-use crate::compiler::{CompilationError, CompilationResult};
 use crate::executor::{ProgramState, RuntimeError, RuntimeResult};
 
 pub const NUMBER_OPERAND_CODE: u8 = 0xD;
@@ -91,12 +90,8 @@ impl InstructionOperands {
     }
 }
 
-// Converts asm instruction operands to binary code
-type InstructionOperandsTranslator =
-    fn(InstructionOperands) -> CompilationResult<(u8, Option<u16>)>;
-
 // Executes a binary instruction
-type InstructionExecutor = fn(&mut ProgramState, usize) -> RuntimeResult<()>;
+pub type InstructionExecutor = fn(&mut ProgramState) -> RuntimeResult<()>;
 
 pub struct InstructionInfo {
     pub name: &'static str,
@@ -108,7 +103,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 3] = [
     InstructionInfo {
         name: "nop",
         accepted_operands: AcceptedOperandTypes(0, 0),
-        executor: |_, _| { Ok(()) },
+        executor: |_| { Ok(()) },
     },
     InstructionInfo {
         name: "mov",
@@ -116,11 +111,12 @@ pub const INSTRUCTION_SET: [InstructionInfo; 3] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: |state, i| {
-            let mut argument1 = (state.memory[i] & 0xF0) >> 4;
-            let mut argument2 = state.memory[i] & 0x0F;
+        executor: |state| {
+            let i = state.curr_addr;
+            let argument1 = (state.memory[i] & 0xF0) >> 4;
+            let argument2 = state.memory[i] & 0x0F;
             let num;
-            // Value to move
+            // Getting the moved value
             if argument2 == NUMBER_OPERAND_CODE {
                 num = u16::from_be_bytes([state.memory[i + 1], state.memory[i + 2]]);
             } else {
@@ -128,30 +124,10 @@ pub const INSTRUCTION_SET: [InstructionInfo; 3] = [
                     return Err(RuntimeError::InvalidOperand(i, argument2));
                 }
                 if argument2 >= 8 {
-                    let addr = state.registers[argument2 as usize - 8] as usize;
-                    num = u16::from_be_bytes([
-                        *state
-                            .memory
-                            .get(addr)
-                            .ok_or(RuntimeError::InvalidAddress(i, addr))?,
-                        *state
-                            .memory
-                            .get(addr + 1)
-                            .ok_or(RuntimeError::InvalidAddress(i, addr + 1))?,
-                    ]);
+                    num = state.read_u16(state.registers[argument2 as usize - 8])?;
                     state.registers[argument2 as usize - 8] += 1;
                 } else if argument2 >= 4 {
-                    let addr = state.registers[argument2 as usize - 4] as usize;
-                    num = u16::from_be_bytes([
-                        *state
-                            .memory
-                            .get(addr)
-                            .ok_or(RuntimeError::InvalidAddress(i, addr))?,
-                        *state
-                            .memory
-                            .get(addr + 1)
-                            .ok_or(RuntimeError::InvalidAddress(i, addr + 1))?,
-                    ]);
+                    num = state.read_u16(state.registers[argument2 as usize - 4])?;
                 } else {
                     num = state.registers[argument2 as usize]
                 };
@@ -161,26 +137,10 @@ pub const INSTRUCTION_SET: [InstructionInfo; 3] = [
                 return Err(RuntimeError::InvalidOperand(i, argument1));
             }
             if argument2 >= 8 {
-                let addr = state.registers[argument1 as usize - 8] as usize;
-                *state
-                    .memory
-                    .get_mut(addr)
-                    .ok_or(RuntimeError::InvalidAddress(i, addr))? = (num >> 8) as u8;
-                *state
-                    .memory
-                    .get_mut(addr + 1)
-                    .ok_or(RuntimeError::InvalidAddress(i, addr + 1))? = num as u8;
+                state.write_u16(state.registers[argument1 as usize - 8], num)?;
                 state.registers[argument1 as usize - 8] += 1;
             } else if argument1 >= 4 {
-                let addr = state.registers[argument1 as usize - 4] as usize;
-                *state
-                    .memory
-                    .get_mut(addr)
-                    .ok_or(RuntimeError::InvalidAddress(i, addr))? = (num >> 8) as u8;
-                *state
-                    .memory
-                    .get_mut(addr + 1)
-                    .ok_or(RuntimeError::InvalidAddress(i, addr + 1))? = num as u8;
+                state.write_u16(state.registers[argument1 as usize - 4], num)?;
             } else {
                 state.registers[argument1 as usize] = num
             };
@@ -190,8 +150,8 @@ pub const INSTRUCTION_SET: [InstructionInfo; 3] = [
     InstructionInfo {
         name: "stop",
         accepted_operands: AcceptedOperandTypes(0, 0),
-        executor: |state, i| {
-            state.is_running = false;
+        executor: |state| {
+            state.has_finished = true;
             Ok(())
         },
     },

@@ -46,6 +46,7 @@ enum TokenType {
     StringLiteral,
     Punctuation,
     Whitespace,
+    Label
 }
 
 /// A selected color theme.
@@ -94,7 +95,6 @@ impl CodeTheme {
 
     pub fn dark() -> Self {
         let font_id = egui::FontId::monospace(10.0);
-        use egui::TextFormat;
         Self {
             dark_mode: true,
             formats: enum_map::enum_map![
@@ -105,6 +105,7 @@ impl CodeTheme {
                 TokenType::StringLiteral => TextFormat::simple(font_id.clone(), Color32::from_rgb(105, 170, 111)),
                 TokenType::Punctuation => TextFormat::simple(font_id.clone(), Color32::LIGHT_GRAY),
                 TokenType::Whitespace => TextFormat::simple(font_id.clone(), Color32::TRANSPARENT),
+                TokenType::Label => TextFormat::simple(font_id.clone(), Color32::from_rgb(179, 174, 96)),
             ],
             bg_color: Color32::from_rgb(30, 31, 34),
             compiled_program: [0; 0x0100],
@@ -113,8 +114,6 @@ impl CodeTheme {
 
     pub fn light() -> Self {
         let font_id = egui::FontId::monospace(10.0);
-        use egui::TextFormat;
-
         Self {
             dark_mode: false,
             formats: enum_map::enum_map![
@@ -125,6 +124,7 @@ impl CodeTheme {
                 TokenType::StringLiteral => TextFormat::simple(font_id.clone(), Color32::from_rgb(105, 170, 111)),
                 TokenType::Punctuation => TextFormat::simple(font_id.clone(), Color32::DARK_GRAY),
                 TokenType::Whitespace => TextFormat::simple(font_id.clone(), Color32::TRANSPARENT),
+                TokenType::Label => TextFormat::simple(font_id.clone(), Color32::from_rgb(228, 183, 34)),
             ],
             bg_color: Color32::from_gray(255),
             compiled_program: [0; 0x0100],
@@ -160,65 +160,7 @@ impl CodeTheme {
 
     /// Show UI for changing the color theme.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_top(|ui| {
-            let selected_id = egui::Id::null();
-            let mut selected_tt: TokenType =
-                ui.data_mut(|d| *d.get_persisted_mut_or(selected_id, TokenType::Comment));
-
-            ui.vertical(|ui| {
-                self.light_dark_small_toggle_button(ui);
-
-                ui.add_space(8.0);
-                ui.separator();
-                ui.add_space(8.0);
-
-                ui.scope(|ui| {
-                    for (tt, tt_name) in [
-                        (TokenType::Comment, "// comment"),
-                        (TokenType::Keyword, "keyword"),
-                        (TokenType::Literal, "literal"),
-                        (TokenType::Number, "num6er"),
-                        (TokenType::StringLiteral, "\"string literal\""),
-                        (TokenType::Punctuation, "punctuation ;"),
-                        // (TokenType::Whitespace, "whitespace"),
-                    ] {
-                        let format = &mut self.formats[tt];
-                        ui.style_mut().override_font_id = Some(format.font_id.clone());
-                        ui.visuals_mut().override_text_color = Some(format.color);
-                        ui.radio_value(&mut selected_tt, tt, tt_name);
-                    }
-                });
-
-                let reset_value = if self.dark_mode {
-                    CodeTheme::dark()
-                } else {
-                    CodeTheme::light()
-                };
-
-                if ui
-                    .add_enabled(*self != reset_value, Button::new("Reset theme"))
-                    .clicked()
-                {
-                    *self = reset_value;
-                }
-            });
-
-            ui.add_space(16.0);
-
-            ui.data_mut(|d| d.insert_persisted(selected_id, selected_tt));
-
-            egui::Frame::group(ui.style())
-                .inner_margin(egui::Vec2::splat(2.0))
-                .show(ui, |ui| {
-                    ui.style_mut().override_text_style = Some(egui::TextStyle::Small);
-                    ui.spacing_mut().slider_width = 128.0; // Controls color picker size
-                    egui::widgets::color_picker::color_picker_color32(
-                        ui,
-                        &mut self.formats[selected_tt].color,
-                        egui::color_picker::Alpha::Opaque,
-                    );
-                });
-        });
+        self.light_dark_small_toggle_button(ui);
     }
 }
 
@@ -248,11 +190,6 @@ pub fn wrapping_parse(mut text: &str) -> Option<u16> {
 
     let base = if text.starts_with("0x") {
         text = &text[2..];
-        16
-    } else if text
-        .chars()
-        .any(|c| c.is_ascii_hexdigit() && !c.is_ascii_digit())
-    {
         16
     } else {
         10
@@ -300,12 +237,23 @@ impl Highlighter {
                     theme.formats[TokenType::StringLiteral].clone(),
                 ));
                 text = &text[end..];
-            } else if text.starts_with(|c: char| c.is_ascii_alphanumeric()) {
+            } else if text.starts_with('@') {
                 let end = text[1..]
-                    .find(|c: char| !c.is_ascii_alphanumeric())
+                    .find(|c: char| !c.is_alphanumeric())
                     .map_or_else(|| text.len(), |i| i + 1);
                 let word = &text[..end];
-                let tt = if Self::is_keyword(word) {
+                job.push((word, 0.0, theme.formats[TokenType::Label].clone()));
+                text = &text[end..];
+            } else if text.starts_with(|c: char| c.is_alphanumeric()) {
+                let mut end = text
+                    .find(|c: char| !c.is_alphanumeric())
+                    .unwrap_or_else(|| text.len());
+                let mut word = &text[..end];
+                let tt = if text[end..].chars().next() == Some(':') {
+                    end += 1;
+                    word = &text[..end];
+                    TokenType::Label
+                } else if Self::is_keyword(word) {
                     TokenType::Keyword
                 } else if wrapping_parse(word).is_some() {
                     TokenType::Number
@@ -314,9 +262,9 @@ impl Highlighter {
                 };
                 job.push((word, 0.0, theme.formats[tt].clone()));
                 text = &text[end..];
-            } else if text.starts_with(|c: char| c.is_ascii_whitespace()) {
+            } else if text.starts_with(|c: char| c.is_whitespace()) {
                 let end = text[1..]
-                    .find(|c: char| !c.is_ascii_whitespace())
+                    .find(|c: char| !c.is_whitespace())
                     .map_or_else(|| text.len(), |i| i + 1);
                 job.push((
                     &text[..end],
@@ -326,7 +274,7 @@ impl Highlighter {
                 text = &text[end..];
             } else {
                 let mut it = text.char_indices();
-                it.next();
+                let _ = it.next();
                 let end = it.next().map_or(text.len(), |(idx, _chr)| idx);
                 job.push((
                     &text[..end],

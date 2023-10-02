@@ -6,10 +6,9 @@ use crate::instruction_set::{
 };
 use eframe::egui::ahash::{HashSet, HashSetExt};
 use eframe::epaint::ahash::{HashMap, HashMapExt};
-use lazy_regex::regex_captures;
+use lazy_regex::{regex_captures, regex_is_match};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
-use std::hint::unreachable_unchecked;
 use std::ops::Range;
 
 pub const MAX_PROGRAM_SIZE: usize = 0x1000;
@@ -25,11 +24,13 @@ pub struct Compiler {
 #[derive(Debug, Hash)]
 pub enum CompilationError {
     UnknownInstruction(usize, String),
-    InvalidLabel(usize, String),
+    NoLabelWithSuchName(usize, String),
     InvalidOperand(usize, String),
     WrongNumberOfOperands(usize, usize, usize),
     WrongOperandType(usize, String, String),
     OutOfMemory(usize),
+    LabelNameAlreadyUsed(usize, String),
+    InvalidLabelName(usize, String),
 }
 
 pub type CompilationResult<T> = Result<T, CompilationError>;
@@ -40,8 +41,8 @@ impl Display for CompilationError {
             CompilationError::UnknownInstruction(line, keyword) => {
                 write!(f, "{line}: Unknown instruction: `{keyword}`")
             }
-            CompilationError::InvalidLabel(line, label) => {
-                write!(f, "{line}: Invalid label: `{label}`")
+            CompilationError::NoLabelWithSuchName(line, label) => {
+                write!(f, "{line}: No label with such name: `{label}`")
             }
             CompilationError::InvalidOperand(line, operand) => {
                 write!(f, "{line}: Invalid operand: `{operand}`")
@@ -56,6 +57,12 @@ impl Display for CompilationError {
             ),
             CompilationError::OutOfMemory(line) => {
                 write!(f, "{line}: Program doesn't fit in memory")
+            }
+            CompilationError::LabelNameAlreadyUsed(line, name) => {
+                write!(f, "{line}: A label with such name already exists: `{name}`")
+            }
+            CompilationError::InvalidLabelName(line, name) => {
+                write!(f, "{line}: `{name}` is not a correct label name")
             }
         }
     }
@@ -140,7 +147,7 @@ impl Compiler {
                         1,
                     ));
                 }
-                let (operand, mut number) = Self::process_operand(a, accepted.0, self.line_i)?;
+                let (operand, number) = Self::process_operand(a, accepted.0, self.line_i)?;
                 Ok((operand << 4, number))
             }
             InstructionOperands::Zero => {
@@ -171,21 +178,27 @@ impl Compiler {
 
     fn parse_operand(&mut self, string: &str) -> CompilationResult<InstructionOperand> {
         let string = string.trim();
+        // Register
         if let Some((_, r)) = regex_captures!(r"^r([0-3])$", string) {
             return Ok(InstructionOperand::Reg(Self::str_reg_to_num(r)));
         }
+        // Address in register
         if let Some((_, r)) = regex_captures!(r"^\(r([0-3])\)$", string) {
             return Ok(InstructionOperand::Addr(Self::str_reg_to_num(r)));
         }
+        // Address in register with increment
         if let Some((_, r)) = regex_captures!(r"^\(r([0-3])\)\+$", string) {
             return Ok(InstructionOperand::AddrInc(Self::str_reg_to_num(r)));
         }
+        // Port
         if let Some((_, r)) = regex_captures!(r"^p([0-9]|10|11|12|13|14|15)$", string) {
             return Ok(InstructionOperand::AddrInc(Self::str_reg_to_num(r)));
         }
+        // Number
         if let Some(num) = wrapping_parse(string) {
             return Ok(InstructionOperand::Number(num));
         }
+        // Label
         if let Some((_, label_name)) = regex_captures!(r"^@(\w+)$", string) {
             self.label_mentions_in_program.push((
                 label_name.to_string(),
@@ -251,22 +264,40 @@ impl Compiler {
         let asm_code = asm_code.to_lowercase();
         let lines: Vec<(usize, &str)> = asm_code.split('\n').enumerate().collect();
         let mut label_names = HashSet::new();
-        for &(i, line) in &lines {
-            let line = Self::preprocess_line(line);
+        let mut errors = vec![];
+
+        // Saving names of created labels.
+        let mut curr_symbol = 0;
+        for &(i, raw_line) in &lines {
+            let raw_line_len = raw_line.chars().count() + 1;
+            let line = Self::preprocess_line(raw_line);
             if line.ends_with(':') {
                 let label_name = &line[..(line.len() - 1)];
-                if label_name.matches(' ').count() == 0 {
+                if regex_is_match!(r"^(?:\w)+$", label_name) {
+                    if label_names.contains(label_name) {
+                        errors.push((
+                            curr_symbol..(curr_symbol + raw_line_len),
+                            CompilationError::LabelNameAlreadyUsed(i, label_name.to_string()),
+                        ));
+                    }
                     label_names.insert(label_name);
+                } else {
+                    errors.push((
+                        curr_symbol..(curr_symbol + raw_line_len),
+                        CompilationError::InvalidLabelName(i, label_name.to_string()),
+                    ));
                 }
             }
+            curr_symbol += raw_line_len;
         }
-        let mut label_addresses = HashMap::new();
-        let mut errors = vec![];
+        // Compiling code.
         let mut curr_symbol = 0;
-        self.line_addresses = vec![0];
+        let mut label_addresses = HashMap::new();
+        let mut line_start_symbol_indexes = vec![];
         self.label_mentions_in_program.clear();
-        // Compiling code
+        self.line_addresses = vec![0];
         for &(i, line) in &lines {
+            line_start_symbol_indexes.push(curr_symbol);
             self.line_i = i;
             let mut instruction_size = 0;
             let line_len_raw = line.len() + 1;
@@ -277,7 +308,7 @@ impl Compiler {
                 if !label_names.contains(&label_name) {
                     errors.push((
                         curr_symbol..(curr_symbol + line_len_raw),
-                        CompilationError::InvalidLabel(i, label_name.to_string()),
+                        CompilationError::NoLabelWithSuchName(i, label_name.to_string()),
                     ));
                 }
                 label_addresses.insert(label_name, *self.line_addresses.last().unwrap());
@@ -315,8 +346,8 @@ impl Compiler {
                 .push(self.line_addresses.last().unwrap() + instruction_size);
             curr_symbol += line_len_raw;
         }
-        self.line_addresses.push(asm_code.chars().count());
-        // Replacing labels with right values
+        line_start_symbol_indexes.push(asm_code.chars().count());
+        // Replacing currently uninitialized labels in code with right values.
         for (label, (label_line, mention_addr)) in self.label_mentions_in_program.clone() {
             if let Some(&addr) = label_addresses.get(label.as_str()) {
                 assert_eq!(self.program[mention_addr], 0);
@@ -326,8 +357,9 @@ impl Compiler {
                 self.program[mention_addr + 1] = addr as u8;
             } else {
                 errors.push((
-                    self.line_addresses[label_line]..self.line_addresses[label_line + 1],
-                    CompilationError::InvalidLabel(label_line, label),
+                    line_start_symbol_indexes[label_line]
+                        ..line_start_symbol_indexes[label_line + 1],
+                    CompilationError::NoLabelWithSuchName(label_line, label),
                 ));
             }
         }

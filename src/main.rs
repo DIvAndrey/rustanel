@@ -7,7 +7,6 @@ pub mod instruction_set;
 mod executor;
 
 use eframe::egui;
-use lazy_regex::{regex_captures, regex_is_match};
 use crate::compiler::{Compiler, ErrorsHighlightInfo};
 use crate::highlighting::{CodeTheme, highlight};
 
@@ -35,7 +34,13 @@ struct MyApp {
 impl Default for MyApp {
     fn default() -> Self {
         Self {
-            code: "mov r0, 5\nmov (r0), (r1)+\nstop\ndhqu dwqj 903".into(),
+            code: "\
+mov (r0), (r1)+
+mov r0, @b
+mov r0, 1
+mov r0, @b
+stop
+a:".into(),
             compiler: Compiler::build(),
         }
     }
@@ -67,16 +72,12 @@ impl eframe::App for MyApp {
         let errors = self.compiler.compile_code(&self.code);
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut theme = CodeTheme::from_memory(ui.ctx());
-            ui.collapsing("Theme", |ui| {
-                ui.group(|ui| {
-                    theme.ui(ui);
-                    theme.clone().store_in_memory(ui.ctx());
-                });
-            });
+            theme.ui(ui);
+            theme.clone().store_in_memory(ui.ctx());
             ui.horizontal_top(|ui| {
                 self.code_editor_ui(ui, &theme, &errors);
                 let mut program_text = String::with_capacity(3000);
-                for i in (0..self.compiler.program.len()) {
+                for i in 0..self.compiler.program.len() {
                     program_text += format!("{:#04x}", self.compiler.program[i])[2..].to_ascii_uppercase().as_str();
                     if (i & 0b111) == 0b111 {
                         program_text += "\n";
@@ -84,7 +85,7 @@ impl eframe::App for MyApp {
                         program_text += " ";
                     }
                 }
-                code_view_ui(ui, &theme, &mut program_text);
+                code_view_ui(ui, &mut program_text);
             });
         });
     }
@@ -93,11 +94,8 @@ impl eframe::App for MyApp {
 /// View some code with syntax highlighting and selection.
 pub fn code_view_ui(
     ui: &mut egui::Ui,
-    theme: &CodeTheme,
     mut code: &str,
 ) {
-    theme.apply_bg_color(ui);
-
     ui.push_id(99999, |ui| {
         egui::ScrollArea::vertical().min_scrolled_height(ui.available_height()).show(ui, |ui| {
             ui.add(
