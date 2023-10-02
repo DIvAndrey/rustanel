@@ -17,7 +17,7 @@ pub const MAX_PROGRAM_SIZE: usize = 0x1000;
 pub struct Compiler {
     instruction_codes: HashMap<&'static str, u8>,
     pub program: [u8; MAX_PROGRAM_SIZE],
-    label_mentions_in_program: Vec<(String, usize)>,
+    label_mentions_in_program: Vec<(String, (usize, usize))>,
     line_addresses: Vec<usize>,
     line_i: usize,
 }
@@ -187,7 +187,10 @@ impl Compiler {
             return Ok(InstructionOperand::Number(num));
         }
         if let Some((_, label_name)) = regex_captures!(r"^@(\w+)$", string) {
-            self.label_mentions_in_program.push((label_name.to_string(), self.line_addresses.last().unwrap() + 2));
+            self.label_mentions_in_program.push((
+                label_name.to_string(),
+                (self.line_i, self.line_addresses.last().unwrap() + 2),
+            ));
             return Ok(InstructionOperand::Number(0));
         }
         Err(CompilationError::InvalidOperand(
@@ -240,12 +243,16 @@ impl Compiler {
         Ok(Some((((code as u16) << 8) | operands as u16, number)))
     }
 
+    fn preprocess_line(line: &str) -> &str {
+        line.trim().splitn(2, ';').next().unwrap()
+    }
+
     pub fn compile_code(&mut self, asm_code: &str) -> ErrorsHighlightInfo {
         let asm_code = asm_code.to_lowercase();
         let lines: Vec<(usize, &str)> = asm_code.split('\n').enumerate().collect();
         let mut label_names = HashSet::new();
         for &(i, line) in &lines {
-            let line = line.trim();
+            let line = Self::preprocess_line(line);
             if line.ends_with(':') {
                 let label_name = &line[..(line.len() - 1)];
                 if label_name.matches(' ').count() == 0 {
@@ -263,7 +270,7 @@ impl Compiler {
             self.line_i = i;
             let mut instruction_size = 0;
             let line_len_raw = line.len() + 1;
-            let line = line.trim();
+            let line = Self::preprocess_line(line);
             if line.ends_with(':') {
                 // Label
                 let label_name = &line[..(line.len() - 1)];
@@ -297,7 +304,7 @@ impl Compiler {
                                     }
                                     None => instruction_size = 2,
                                 }
-                            },
+                            }
                             None => {}
                         }
                     }
@@ -308,14 +315,20 @@ impl Compiler {
                 .push(self.line_addresses.last().unwrap() + instruction_size);
             curr_symbol += line_len_raw;
         }
-
+        self.line_addresses.push(asm_code.chars().count());
         // Replacing labels with right values
-        for (label, mention_addr) in self.label_mentions_in_program.clone() {
+        for (label, (label_line, mention_addr)) in self.label_mentions_in_program.clone() {
             if let Some(&addr) = label_addresses.get(label.as_str()) {
-                // assert_eq!(self.program[mention_addr], 0);
-                // assert_eq!(self.program[mention_addr + 1], 0);
+                assert_eq!(self.program[mention_addr], 0);
+                assert_eq!(self.program[mention_addr + 1], 0);
+                dbg!(addr);
                 self.program[mention_addr] = (addr >> 8) as u8;
                 self.program[mention_addr + 1] = addr as u8;
+            } else {
+                errors.push((
+                    self.line_addresses[label_line]..self.line_addresses[label_line + 1],
+                    CompilationError::InvalidLabel(label_line, label),
+                ));
             }
         }
         errors
