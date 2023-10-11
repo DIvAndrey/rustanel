@@ -103,7 +103,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 3] = [
     InstructionInfo {
         name: "nop",
         accepted_operands: AcceptedOperandTypes(0, 0),
-        executor: |_| { Ok(()) },
+        executor: |_| Ok(()),
     },
     InstructionInfo {
         name: "mov",

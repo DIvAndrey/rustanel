@@ -1,12 +1,12 @@
 use crate::compiler::ErrorsHighlightInfo;
+use crate::instruction_set::INSTRUCTION_SET;
 use eframe::egui;
+use eframe::egui::ahash::HashSetExt;
 use eframe::egui::{Button, Color32, Stroke, TextFormat, Visuals};
 use eframe::epaint::ahash::HashSet;
 use egui::text::LayoutJob;
 use enum_map::Enum;
 use lazy_static::lazy_static;
-use crate::instruction_set::INSTRUCTION_SET;
-use eframe::egui::ahash::HashSetExt;
 
 /// Add syntax highlighting to a code string.
 ///
@@ -46,7 +46,7 @@ enum TokenType {
     StringLiteral,
     Punctuation,
     Whitespace,
-    Label
+    Label,
 }
 
 /// A selected color theme.
@@ -299,7 +299,8 @@ impl Highlighter {
         let mut i = 0;
         for (text, leading_space, format) in job {
             for c in text.chars() {
-                if i == 0 || is_error[i] != is_error[i - 1] || format != job_data.last().unwrap().2 {
+                if i == 0 || is_error[i] != is_error[i - 1] || format != job_data.last().unwrap().2
+                {
                     job_data.push((
                         i,
                         leading_space,

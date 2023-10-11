@@ -290,7 +290,7 @@ impl Compiler {
             }
             curr_symbol += raw_line_len;
         }
-        // Compiling code.
+        // Compiling the program
         let mut curr_symbol = 0;
         let mut label_addresses = HashMap::new();
         let mut line_start_symbol_indexes = vec![];
@@ -347,7 +347,7 @@ impl Compiler {
             curr_symbol += line_len_raw;
         }
         line_start_symbol_indexes.push(asm_code.chars().count());
-        // Replacing currently uninitialized labels in code with right values.
+        // Replacing currently uninitialized label @mentions in code with the right addresses.
         for (label, (label_line, mention_addr)) in self.label_mentions_in_program.clone() {
             if let Some(&addr) = label_addresses.get(label.as_str()) {
                 assert_eq!(self.program[mention_addr], 0);

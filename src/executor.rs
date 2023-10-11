@@ -1,6 +1,6 @@
-use std::fmt::{Display, Formatter};
 use crate::compiler::MAX_PROGRAM_SIZE;
 use crate::instruction_set::INSTRUCTION_SET;
+use std::fmt::{Display, Formatter};
 
 pub struct ProgramState {
     pub registers: [u16; 4],
@@ -70,8 +70,12 @@ pub enum RuntimeError {
 impl Display for RuntimeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            RuntimeError::InvalidOperand(line, operand) => write!(f, "{line:x}: invalid operand: `{operand:x}`"),
-            RuntimeError::InvalidAddress(line, address) => write!(f, "{line:x}: invalid address: `{address:x}`")
+            RuntimeError::InvalidOperand(line, operand) => {
+                write!(f, "{line:x}: invalid operand: `{operand:x}`")
+            }
+            RuntimeError::InvalidAddress(line, address) => {
+                write!(f, "{line:x}: invalid address: `{address:x}`")
+            }
         }
     }
 }
