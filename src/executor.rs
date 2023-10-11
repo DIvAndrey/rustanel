@@ -5,7 +5,7 @@ use crate::instruction_set::INSTRUCTION_SET;
 pub struct ProgramState {
     pub registers: [u16; 4],
     pub memory: [u8; MAX_PROGRAM_SIZE],
-    pub display: [u16; 8],
+    pub display: [u16; 16],
     pub has_finished: bool,
     pub curr_addr: usize,
 }
@@ -15,7 +15,7 @@ impl ProgramState {
         Self {
             registers: [0; 4],
             memory: [0; MAX_PROGRAM_SIZE],
-            display: [0; 8],
+            display: [0; 16],
             has_finished: false,
             curr_addr: 0,
         }

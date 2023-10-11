@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 eframe = { version = "0.23.0" }
+egui_extras = { version = "*", features = ["all_loaders"] }
 enum-map = "2.6.3"
 lazy_static = "1.4.0"
 lazy-regex = { version = "3.0.2", features = ["std"] }
