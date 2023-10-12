@@ -250,7 +250,7 @@ impl Compiler {
             #[cfg(debug_assertions)]
             _ => unreachable!(),
             #[cfg(not(debug_assertions))]
-            _ => unsafe { unreachable_unchecked() },
+            _ => unsafe { std::hint::unreachable_unchecked() }
         };
         let (operands, number) = self.conv_operands_to_binary(operands, info.accepted_operands)?;
         Ok(Some((((code as u16) << 8) | operands as u16, number)))

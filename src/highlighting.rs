@@ -53,7 +53,7 @@ enum TokenType {
 #[derive(Clone, Hash, PartialEq)]
 pub struct CodeTheme {
     dark_mode: bool,
-    formats: enum_map::EnumMap<TokenType, egui::TextFormat>,
+    formats: enum_map::EnumMap<TokenType, TextFormat>,
     bg_color: Color32,
     compiled_program: [u8; 0x100],
 }
@@ -136,31 +136,6 @@ impl CodeTheme {
         old_visuals.extreme_bg_color = self.bg_color;
         old_visuals.code_bg_color = self.bg_color;
         ui.ctx().set_visuals(old_visuals);
-    }
-
-    fn light_dark_small_toggle_button(&mut self, ui: &mut egui::Ui) {
-        if ui.visuals().dark_mode {
-            if ui
-                .add(Button::new("☀").frame(false))
-                .on_hover_text("Switch to light mode")
-                .clicked()
-            {
-                ui.ctx().set_visuals(Visuals::light());
-            }
-        } else {
-            if ui
-                .add(Button::new("🌙").frame(false))
-                .on_hover_text("Switch to dark mode")
-                .clicked()
-            {
-                ui.ctx().set_visuals(Visuals::dark());
-            }
-        }
-    }
-
-    /// Show UI for changing the color theme.
-    pub fn ui(&mut self, ui: &mut egui::Ui) {
-        self.light_dark_small_toggle_button(ui);
     }
 }
 
