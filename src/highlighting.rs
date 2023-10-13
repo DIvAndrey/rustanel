@@ -2,7 +2,7 @@ use crate::compiler::ErrorsHighlightInfo;
 use crate::instruction_set::INSTRUCTION_SET;
 use eframe::egui;
 use eframe::egui::ahash::HashSetExt;
-use eframe::egui::{Button, Color32, Stroke, TextFormat, Visuals};
+use eframe::egui::{Color32, Stroke, TextFormat};
 use eframe::epaint::ahash::HashSet;
 use egui::text::LayoutJob;
 use enum_map::Enum;

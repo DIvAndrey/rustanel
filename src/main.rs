@@ -11,6 +11,7 @@ use crate::executor::ProgramState;
 use crate::highlighting::{highlight, CodeTheme};
 use eframe::egui;
 use eframe::egui::{include_image, vec2, RichText, Vec2, Visuals};
+use crate::instruction_set::InstructionOperand;
 
 // fn main() {
 //     dbg!(regex_captures!(r"^p([0-9]|10|11|12|13|14|15)$", "p115"));
@@ -132,6 +133,34 @@ impl MyApp {
         ui.spacing_mut().item_spacing = vec2(8.0, 3.0);
     }
 
+    fn draw_registers_grid_contents(&mut self, ui: &mut egui::Ui) {
+        ui.label(RichText::new("").strong().size(12.0));
+        ui.label(RichText::new("binary").size(12.0));
+        ui.label(RichText::new("hex").size(12.0));
+        ui.label(RichText::new("unsigned").size(12.0));
+        ui.label(RichText::new("signed").size(12.0));
+        ui.end_row();
+        for (i, &val) in self.program_executor.registers.iter().enumerate() {
+            let bits = format!("{val:#018b}")[2..].to_string();
+            let bits = format!(
+                "{} {} {} {}",
+                &bits[0..4],
+                &bits[4..8],
+                &bits[8..12],
+                &bits[12..16]
+            );
+            let hex = format!("{val:#06x}")[2..].to_string();
+            let unsigned = val.to_string();
+            let signed = (val as i16).to_string();
+            ui.label(Self::get_monospace(&InstructionOperand::Reg(i as u8).to_string(), 10.0).strong());
+            ui.label(Self::get_monospace(&bits, 12.0));
+            ui.label(Self::get_monospace(&hex, 12.0));
+            ui.label(Self::get_monospace(&unsigned, 12.0));
+            ui.label(Self::get_monospace(&signed, 12.0));
+            ui.end_row()
+        }
+    }
+
     fn settings_and_info_panel_ui(&mut self, ui: &mut egui::Ui) {
         let mut is_dark_mode = ui.ctx().style().visuals.dark_mode;
         ui.horizontal(|ui| {
@@ -158,31 +187,7 @@ impl MyApp {
             .min_col_width(0.0)
             .spacing(vec2(14.0, 4.0))
             .show(ui, |ui| {
-                ui.label(RichText::new("").strong().size(12.0));
-                ui.label(RichText::new("binary").size(12.0));
-                ui.label(RichText::new("hex").size(12.0));
-                ui.label(RichText::new("unsigned").size(12.0));
-                ui.label(RichText::new("signed").size(12.0));
-                ui.end_row();
-                for (i, &val) in self.program_executor.registers.iter().enumerate() {
-                    let bits = format!("{val:#018b}")[2..].to_string();
-                    let bits = format!(
-                        "{} {} {} {}",
-                        &bits[0..4],
-                        &bits[4..8],
-                        &bits[8..12],
-                        &bits[12..16]
-                    );
-                    let hex = format!("{val:#06x}")[2..].to_string();
-                    let unsigned = val.to_string();
-                    let signed = (val as i16).to_string();
-                    ui.label(Self::get_monospace(&format!("R{i}"), 10.0).strong());
-                    ui.label(Self::get_monospace(&bits, 12.0));
-                    ui.label(Self::get_monospace(&hex, 12.0));
-                    ui.label(Self::get_monospace(&unsigned, 12.0));
-                    ui.label(Self::get_monospace(&signed, 12.0));
-                    ui.end_row()
-                }
+                self.draw_registers_grid_contents(ui);
             });
     }
 }

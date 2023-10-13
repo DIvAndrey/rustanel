@@ -1,5 +1,6 @@
 use crate::executor::{ProgramState, RuntimeError, RuntimeResult};
 
+pub const STACK_POINTER_OPERAND_CODE: u8 = 0xC;
 pub const NUMBER_OPERAND_CODE: u8 = 0xD;
 
 pub const REG_MASK: u8 = 0b00001;
@@ -64,6 +65,7 @@ pub enum InstructionOperand {
 impl ToString for InstructionOperand {
     fn to_string(&self) -> String {
         match self {
+            InstructionOperand::Reg(4) => format!("SP"),
             InstructionOperand::Reg(r) => format!("R{r}"),
             InstructionOperand::Addr(r) => format!("(R{r})"),
             InstructionOperand::AddrInc(r) => format!("R({r})+"),
@@ -120,23 +122,25 @@ pub const INSTRUCTION_SET: [InstructionInfo; 3] = [
             if argument2 == NUMBER_OPERAND_CODE {
                 num = u16::from_be_bytes([state.memory[i + 1], state.memory[i + 2]]);
             } else {
-                if argument2 >= 12 {
+                if argument2 == STACK_POINTER_OPERAND_CODE {
+                    num = state.registers[4];
+                } else if argument2 >= 12 {
                     return Err(RuntimeError::InvalidOperand(i, argument2));
-                }
-                if argument2 >= 8 {
+                } else if argument2 >= 8 {
                     num = state.read_u16(state.registers[argument2 as usize - 8])?;
                     state.registers[argument2 as usize - 8] += 1;
                 } else if argument2 >= 4 {
                     num = state.read_u16(state.registers[argument2 as usize - 4])?;
                 } else {
-                    num = state.registers[argument2 as usize]
+                    num = state.registers[argument2 as usize];
                 };
             };
             // Assigning value
-            if argument1 >= 12 {
+            if argument2 == STACK_POINTER_OPERAND_CODE {
+                state.registers[4] = num;
+            } else if argument1 >= 12 {
                 return Err(RuntimeError::InvalidOperand(i, argument1));
-            }
-            if argument2 >= 8 {
+            } else if argument2 >= 8 {
                 state.write_u16(state.registers[argument1 as usize - 8], num)?;
                 state.registers[argument1 as usize - 8] += 1;
             } else if argument1 >= 4 {

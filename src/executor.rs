@@ -3,7 +3,8 @@ use crate::instruction_set::INSTRUCTION_SET;
 use std::fmt::{Display, Formatter};
 
 pub struct ProgramState {
-    pub registers: [u16; 4],
+    pub registers: [u16; 5],
+    pub state_register: u16,
     pub memory: [u8; MAX_PROGRAM_SIZE],
     pub display: [u16; 16],
     pub has_finished: bool,
@@ -13,7 +14,8 @@ pub struct ProgramState {
 impl ProgramState {
     pub fn new() -> Self {
         Self {
-            registers: [0; 4],
+            registers: [0, 0, 0, 0, (MAX_PROGRAM_SIZE - 1) as u16],
+            state_register: 0,
             memory: [0; MAX_PROGRAM_SIZE],
             display: [0; 16],
             has_finished: false,

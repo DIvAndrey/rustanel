@@ -182,6 +182,10 @@ impl Compiler {
         if let Some((_, r)) = regex_captures!(r"^r([0-3])$", string) {
             return Ok(InstructionOperand::Reg(Self::str_reg_to_num(r)));
         }
+        // Stack pointer
+        if string == "sp" {
+            return Ok(InstructionOperand::Reg(4));
+        }
         // Address in register
         if let Some((_, r)) = regex_captures!(r"^\(r([0-3])\)$", string) {
             return Ok(InstructionOperand::Addr(Self::str_reg_to_num(r)));
