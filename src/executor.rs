@@ -2,20 +2,20 @@ use crate::compiler::MAX_PROGRAM_SIZE;
 use crate::instruction_set::INSTRUCTION_SET;
 use std::fmt::{Display, Formatter};
 
-pub struct ProgramState {
+pub struct ProgramExecutor {
     pub registers: [u16; 5],
-    pub state_register: u16,
+    pub program_state_reg: u16,
     pub memory: [u8; MAX_PROGRAM_SIZE],
     pub display: [u16; 16],
     pub has_finished: bool,
     pub curr_addr: usize,
 }
 
-impl ProgramState {
+impl ProgramExecutor {
     pub fn new() -> Self {
         Self {
             registers: [0, 0, 0, 0, (MAX_PROGRAM_SIZE - 1) as u16],
-            state_register: 0,
+            program_state_reg: 0,
             memory: [0; MAX_PROGRAM_SIZE],
             display: [0; 16],
             has_finished: false,

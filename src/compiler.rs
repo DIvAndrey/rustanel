@@ -265,6 +265,7 @@ impl Compiler {
     }
 
     pub fn compile_code(&mut self, asm_code: &str) -> ErrorsHighlightInfo {
+        self.program = [0; MAX_PROGRAM_SIZE];
         let asm_code = asm_code.to_lowercase();
         let lines: Vec<(usize, &str)> = asm_code.split('\n').enumerate().collect();
         let mut label_names = HashSet::new();
@@ -356,7 +357,6 @@ impl Compiler {
             if let Some(&addr) = label_addresses.get(label.as_str()) {
                 assert_eq!(self.program[mention_addr], 0);
                 assert_eq!(self.program[mention_addr + 1], 0);
-                dbg!(addr);
                 self.program[mention_addr] = (addr >> 8) as u8;
                 self.program[mention_addr + 1] = addr as u8;
             } else {

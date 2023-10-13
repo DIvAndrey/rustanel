@@ -7,7 +7,7 @@ mod highlighting;
 pub mod instruction_set;
 
 use crate::compiler::{Compiler, ErrorsHighlightInfo};
-use crate::executor::ProgramState;
+use crate::executor::ProgramExecutor;
 use crate::highlighting::{highlight, CodeTheme};
 use eframe::egui;
 use eframe::egui::{include_image, vec2, RichText, Vec2, Visuals};
@@ -32,8 +32,9 @@ fn main() -> Result<(), eframe::Error> {
 struct MyApp {
     code: String,
     compiler: Compiler,
-    program_executor: ProgramState,
+    program_executor: ProgramExecutor,
     new_pixels_per_point: f32,
+    last_info_panel_height: f32,
 }
 
 impl Default for MyApp {
@@ -41,15 +42,16 @@ impl Default for MyApp {
         Self {
             code: "\
 mov (r0), (r1)+
-mov r0, @b
+mov r0, @a
 mov r0, 1
 mov r0, @b
 stop
 a:"
             .into(),
             compiler: Compiler::build(),
-            program_executor: ProgramState::new(),
-            new_pixels_per_point: 2.0,
+            program_executor: ProgramExecutor::new(),
+            new_pixels_per_point: 3.0,
+            last_info_panel_height: 0.0,
         }
     }
 }
@@ -133,37 +135,51 @@ impl MyApp {
         ui.spacing_mut().item_spacing = vec2(8.0, 3.0);
     }
 
+    fn draw_register_info_row(&mut self, ui: &mut egui::Ui, name: &str, val: u16) {
+        let bits = format!("{val:#018b}")[2..].to_string();
+        let bits = format!(
+            "{} {} {} {}",
+            &bits[0..4],
+            &bits[4..8],
+            &bits[8..12],
+            &bits[12..16]
+        );
+        let hex = format!("{val:#06x}")[2..].to_string();
+        let unsigned = val.to_string();
+        let signed = (val as i16).to_string();
+        ui.label(Self::get_monospace(name, 10.0).strong());
+        ui.label(Self::get_monospace(&bits, 10.0));
+        ui.label(Self::get_monospace(&hex, 10.0));
+        ui.label(Self::get_monospace(&unsigned, 10.0));
+        ui.label(Self::get_monospace(&signed, 10.0));
+        ui.end_row()
+    }
+
     fn draw_registers_grid_contents(&mut self, ui: &mut egui::Ui) {
-        ui.label(RichText::new("").strong().size(12.0));
-        ui.label(RichText::new("binary").size(12.0));
-        ui.label(RichText::new("hex").size(12.0));
-        ui.label(RichText::new("unsigned").size(12.0));
-        ui.label(RichText::new("signed").size(12.0));
+        ui.label(RichText::new("reg").size(8.0));
+        ui.label(RichText::new("binary").size(8.0));
+        ui.label(RichText::new("hex").size(8.0));
+        ui.label(RichText::new("unsigned").size(8.0));
+        ui.label(RichText::new("signed").size(8.0));
         ui.end_row();
-        for (i, &val) in self.program_executor.registers.iter().enumerate() {
-            let bits = format!("{val:#018b}")[2..].to_string();
-            let bits = format!(
-                "{} {} {} {}",
-                &bits[0..4],
-                &bits[4..8],
-                &bits[8..12],
-                &bits[12..16]
-            );
-            let hex = format!("{val:#06x}")[2..].to_string();
-            let unsigned = val.to_string();
-            let signed = (val as i16).to_string();
-            ui.label(Self::get_monospace(&InstructionOperand::Reg(i as u8).to_string(), 10.0).strong());
-            ui.label(Self::get_monospace(&bits, 12.0));
-            ui.label(Self::get_monospace(&hex, 12.0));
-            ui.label(Self::get_monospace(&unsigned, 12.0));
-            ui.label(Self::get_monospace(&signed, 12.0));
-            ui.end_row()
+        for i in 0..4 {
+            self.draw_register_info_row(ui, &format!("R{i}"), self.program_executor.registers[i]);
         }
+        ui.end_row();
+        self.draw_register_info_row(ui, "PC", self.program_executor.curr_addr as u16);
+        self.draw_register_info_row(ui, "SP", self.program_executor.registers[4]);
+        self.draw_register_info_row(ui, "PS", self.program_executor.program_state_reg);
     }
 
     fn settings_and_info_panel_ui(&mut self, ui: &mut egui::Ui) {
         let mut is_dark_mode = ui.ctx().style().visuals.dark_mode;
         ui.horizontal(|ui| {
+            ui.label("Ui scale:");
+            let response = ui.add(egui::Slider::new(&mut self.new_pixels_per_point, 0.5..=4.0));
+            if !response.is_pointer_button_down_on() {
+                ui.ctx().set_pixels_per_point(self.new_pixels_per_point);
+            }
+            ui.add(egui::Separator::default().vertical());
             ui.label("Theme:");
             ui.selectable_value(&mut is_dark_mode, false, "☀ Light");
             ui.selectable_value(&mut is_dark_mode, true, "🌙 Dark");
@@ -172,12 +188,6 @@ impl MyApp {
             } else {
                 Visuals::light()
             });
-            ui.add(egui::Separator::default().vertical());
-            ui.label("Ui scale:");
-            let response = ui.add(egui::Slider::new(&mut self.new_pixels_per_point, 0.5..=4.0));
-            if !response.is_pointer_button_down_on() {
-                ui.ctx().set_pixels_per_point(self.new_pixels_per_point);
-            }
         });
         ui.separator();
         ui.label(RichText::new("Registers").strong().size(14.0));
@@ -185,7 +195,7 @@ impl MyApp {
         egui::Grid::new("Settings and info")
             .min_row_height(0.0)
             .min_col_width(0.0)
-            .spacing(vec2(14.0, 4.0))
+            .spacing(vec2(12.0, 4.0))
             .show(ui, |ui| {
                 self.draw_registers_grid_contents(ui);
             });
@@ -199,6 +209,7 @@ impl eframe::App for MyApp {
         let errors = self.compiler.compile_code(&self.code);
         egui::TopBottomPanel::top("Light bulbs and registers")
             .resizable(true)
+            .min_height(self.last_info_panel_height)
             .default_height(256.0)
             .show(ctx, |ui| {
                 let available = ui.available_size();
@@ -208,10 +219,10 @@ impl eframe::App for MyApp {
                 ui.horizontal_top(|ui| {
                     self.light_bulbs_panel_ui(ui, lamp_size);
                     ui.add(egui::Separator::default().vertical().spacing(10.0));
-                    ui.vertical(|ui| {
+                    self.last_info_panel_height = ui.vertical(|ui| {
                         self.settings_and_info_panel_ui(ui);
                         theme.apply_bg_color(ui);
-                    });
+                    }).response.rect.height();
                 });
             });
         egui::CentralPanel::default().show(ctx, |ui| {

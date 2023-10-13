@@ -1,4 +1,4 @@
-use crate::executor::{ProgramState, RuntimeError, RuntimeResult};
+use crate::executor::{ProgramExecutor, RuntimeError, RuntimeResult};
 
 pub const STACK_POINTER_OPERAND_CODE: u8 = 0xC;
 pub const NUMBER_OPERAND_CODE: u8 = 0xD;
@@ -93,7 +93,7 @@ impl InstructionOperands {
 }
 
 // Executes a binary instruction
-pub type InstructionExecutor = fn(&mut ProgramState) -> RuntimeResult<()>;
+pub type InstructionExecutor = fn(&mut ProgramExecutor) -> RuntimeResult<()>;
 
 pub struct InstructionInfo {
     pub name: &'static str,
