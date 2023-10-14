@@ -50,7 +50,7 @@ a:"
             .into(),
             compiler: Compiler::build(),
             program_executor: ProgramExecutor::new(),
-            new_pixels_per_point: 3.0,
+            new_pixels_per_point: 2.5,
             last_info_panel_height: 0.0,
         }
     }
@@ -188,6 +188,13 @@ impl MyApp {
             } else {
                 Visuals::light()
             });
+            ui.add(egui::Separator::default().vertical());
+            if ui.button("▶").clicked() {
+
+            }
+            if ui.button("🐞").clicked() {
+
+            }
         });
         ui.separator();
         ui.label(RichText::new("Registers").strong().size(14.0));
