@@ -10,8 +10,8 @@ use crate::compiler::{Compiler, ErrorsHighlightInfo};
 use crate::executor::ProgramExecutor;
 use crate::highlighting::{highlight, CodeTheme};
 use eframe::egui;
-use eframe::egui::{include_image, vec2, RichText, Vec2, Visuals};
-use crate::instruction_set::InstructionOperand;
+use eframe::egui::{include_image, vec2, RichText, Vec2, Visuals, Response};
+use eframe::egui::load::TexturePoll;
 
 // fn main() {
 //     dbg!(regex_captures!(r"^p([0-9]|10|11|12|13|14|15)$", "p115"));
@@ -179,7 +179,7 @@ impl MyApp {
             if !response.is_pointer_button_down_on() {
                 ui.ctx().set_pixels_per_point(self.new_pixels_per_point);
             }
-            ui.add(egui::Separator::default().vertical());
+            ui.separator();
             ui.label("Theme:");
             ui.selectable_value(&mut is_dark_mode, false, "☀ Light");
             ui.selectable_value(&mut is_dark_mode, true, "🌙 Dark");
@@ -188,16 +188,18 @@ impl MyApp {
             } else {
                 Visuals::light()
             });
-            ui.add(egui::Separator::default().vertical());
-            if ui.button("▶").clicked() {
+        });
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Registers").strong().size(14.0));
+            ui.separator();
+            if ui.add(egui::ImageButton::new(egui::Image::new(include_image!("../data/Run button.png")).fit_to_exact_size(Vec2::splat(10.0)))).clicked() {
 
             }
-            if ui.button("🐞").clicked() {
+            if ui.add(egui::ImageButton::new(egui::Image::new(include_image!("../data/Debug button.png")).fit_to_exact_size(Vec2::splat(10.0)))).clicked() {
 
             }
         });
-        ui.separator();
-        ui.label(RichText::new("Registers").strong().size(14.0));
         ui.end_row();
         egui::Grid::new("Settings and info")
             .min_row_height(0.0)
