@@ -43,7 +43,7 @@ impl ProgramExecutor {
     pub fn read_u16(&self, addr: u16) -> RuntimeResult<u16> {
         Ok(u16::from_be_bytes([
             self.read_u8(addr)?,
-            self.read_u8(addr + 1)?,
+            self.read_u8(addr.wrapping_add(1))?,
         ]))
     }
 
@@ -63,8 +63,9 @@ impl ProgramExecutor {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RuntimeError {
+    InvalidInstruction(usize, u8),
     InvalidOperand(usize, u8),
     InvalidAddress(usize, usize),
 }
@@ -72,11 +73,14 @@ pub enum RuntimeError {
 impl Display for RuntimeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            RuntimeError::InvalidInstruction(line, instruction) => {
+                write!(f, "0x{line:x}: Invalid operand: `{instruction:x}`")
+            }
             RuntimeError::InvalidOperand(line, operand) => {
-                write!(f, "{line:x}: invalid operand: `{operand:x}`")
+                write!(f, "0x{line:x}: Invalid operand: `{operand:x}`")
             }
             RuntimeError::InvalidAddress(line, address) => {
-                write!(f, "{line:x}: invalid address: `{address:x}`")
+                write!(f, "0x{line:x}: Invalid address: `{address:x}`")
             }
         }
     }

@@ -21,16 +21,16 @@ pub struct Compiler {
     line_i: usize,
 }
 
-#[derive(Debug, Hash)]
+#[derive(Debug, Hash, Clone)]
 pub enum CompilationError {
-    UnknownInstruction(usize, String),
-    NoLabelWithSuchName(usize, String),
-    InvalidOperand(usize, String),
-    WrongNumberOfOperands(usize, usize, usize),
-    WrongOperandType(usize, String, String),
-    OutOfMemory(usize),
-    LabelNameAlreadyUsed(usize, String),
-    InvalidLabelName(usize, String),
+    UnknownInstruction { line: usize, instruction: String },
+    NoLabelWithSuchName { line: usize, name: String },
+    InvalidOperand { line: usize, operand: String },
+    WrongNumberOfOperands { line: usize, expected: usize, found: usize },
+    WrongOperandType { line: usize, expected: String, found: String },
+    OutOfMemory { line: usize },
+    LabelNameAlreadyUsed { line: usize, name: String },
+    InvalidLabelName { line: usize, name: String },
 }
 
 pub type CompilationResult<T> = Result<T, CompilationError>;
@@ -38,31 +38,31 @@ pub type CompilationResult<T> = Result<T, CompilationError>;
 impl Display for CompilationError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            CompilationError::UnknownInstruction(line, keyword) => {
-                write!(f, "{line}: Unknown instruction: `{keyword}`")
+            CompilationError::UnknownInstruction { line, instruction } => {
+                write!(f, "line {line}: Unknown instruction: `{instruction}`")
             }
-            CompilationError::NoLabelWithSuchName(line, label) => {
-                write!(f, "{line}: No label with such name: `{label}`")
+            CompilationError::NoLabelWithSuchName { line, name } => {
+                write!(f, "line {line}: No label with such name: `{name}`")
             }
-            CompilationError::InvalidOperand(line, operand) => {
-                write!(f, "{line}: Invalid operand: `{operand}`")
+            CompilationError::InvalidOperand { line, operand } => {
+                write!(f, "line {line}: Invalid operand: `{operand}`")
             }
-            CompilationError::WrongNumberOfOperands(line, expected, found) => write!(
+            CompilationError::WrongNumberOfOperands { line, expected, found } => write!(
                 f,
-                "{line}: Wrong number of operands: expected {expected}, found {found}"
+                "line {line}: Wrong number of operands: expected {expected}, found {found}"
             ),
-            CompilationError::WrongOperandType(line, expected, found) => write!(
+            CompilationError::WrongOperandType { line, expected, found } => write!(
                 f,
-                "{line}: Wrong operand type: expected: {expected}, found {found}"
+                "line {line}: Wrong operand type: expected: {expected}, found {found}"
             ),
-            CompilationError::OutOfMemory(line) => {
-                write!(f, "{line}: Program doesn't fit in memory")
+            CompilationError::OutOfMemory { line } => {
+                write!(f, "line {line}: Program doesn't fit in memory")
             }
-            CompilationError::LabelNameAlreadyUsed(line, name) => {
-                write!(f, "{line}: A label with such name already exists: `{name}`")
+            CompilationError::LabelNameAlreadyUsed { line, name } => {
+                write!(f, "line {line}: A label with such name already exists: `{name}`")
             }
-            CompilationError::InvalidLabelName(line, name) => {
-                write!(f, "{line}: `{name}` is not a correct label name")
+            CompilationError::InvalidLabelName { line, name } => {
+                write!(f, "line {line}: `{name}` is not a correct label name")
             }
         }
     }
@@ -105,11 +105,11 @@ impl Compiler {
                 operand_byte |= NUMBER_OPERAND_CODE;
             }
             _ => {
-                return Err(CompilationError::WrongOperandType(
-                    line_i,
-                    get_expected_operand_types_string(accepted_mask),
-                    operand.to_string(),
-                ))
+                return Err(CompilationError::WrongOperandType {
+                    line: line_i,
+                    expected: get_expected_operand_types_string(accepted_mask),
+                    found: operand.to_string(),
+                })
             }
         }
         Ok((operand_byte, number))
@@ -124,11 +124,11 @@ impl Compiler {
         match operands {
             InstructionOperands::Two(a, b) => {
                 if expected_operands_num != 2 {
-                    return Err(CompilationError::WrongNumberOfOperands(
-                        self.line_i,
-                        expected_operands_num,
-                        2,
-                    ));
+                    return Err(CompilationError::WrongNumberOfOperands {
+                        line: self.line_i,
+                        expected: expected_operands_num,
+                        found: 2,
+                    });
                 }
                 let (operand1, mut number) = Self::process_operand(a, accepted.0, self.line_i)?;
                 let (operand2, number1) = Self::process_operand(b, accepted.1, self.line_i)?;
@@ -141,22 +141,22 @@ impl Compiler {
             }
             InstructionOperands::One(a) => {
                 if expected_operands_num != 1 {
-                    return Err(CompilationError::WrongNumberOfOperands(
-                        self.line_i,
-                        expected_operands_num,
-                        1,
-                    ));
+                    return Err(CompilationError::WrongNumberOfOperands {
+                        line: self.line_i,
+                        expected: expected_operands_num,
+                        found: 1,
+                    });
                 }
                 let (operand, number) = Self::process_operand(a, accepted.0, self.line_i)?;
                 Ok((operand << 4, number))
             }
             InstructionOperands::Zero => {
                 if expected_operands_num != 0 {
-                    return Err(CompilationError::WrongNumberOfOperands(
-                        self.line_i,
-                        expected_operands_num,
-                        0,
-                    ));
+                    return Err(CompilationError::WrongNumberOfOperands {
+                        line: self.line_i,
+                        expected: expected_operands_num,
+                        found: 0,
+                    });
                 }
                 Ok((0, None))
             }
@@ -210,10 +210,10 @@ impl Compiler {
             ));
             return Ok(InstructionOperand::Number(0));
         }
-        Err(CompilationError::InvalidOperand(
-            self.line_i,
-            string.to_string(),
-        ))
+        Err(CompilationError::InvalidOperand {
+            line: self.line_i,
+            operand: string.to_string(),
+        })
     }
 
     // Compiles a single assembly instruction and returns its binary code
@@ -230,10 +230,10 @@ impl Compiler {
             *self
                 .instruction_codes
                 .get(name)
-                .ok_or(CompilationError::UnknownInstruction(
-                    self.line_i,
-                    name.to_string(),
-                ))?;
+                .ok_or(CompilationError::UnknownInstruction {
+                    line: self.line_i,
+                    instruction: name.to_string(),
+                })?;
         let info = &INSTRUCTION_SET[code as usize];
         let operands = if let Some(operands) = words.get(1) {
             operands.split(',').collect::<Vec<&str>>()
@@ -241,11 +241,11 @@ impl Compiler {
             vec![]
         };
         if operands.len() != info.accepted_operands.count() {
-            return Err(CompilationError::WrongNumberOfOperands(
-                self.line_i,
-                info.accepted_operands.count(),
-                operands.len(),
-            ));
+            return Err(CompilationError::WrongNumberOfOperands {
+                line: self.line_i,
+                expected: info.accepted_operands.count(),
+                found: operands.len(),
+            });
         }
         let operands = match &operands[..] {
             &[] => InstructionOperands::Zero,
@@ -282,14 +282,14 @@ impl Compiler {
                     if label_names.contains(label_name) {
                         errors.push((
                             curr_symbol..(curr_symbol + raw_line_len),
-                            CompilationError::LabelNameAlreadyUsed(i, label_name.to_string()),
+                            CompilationError::LabelNameAlreadyUsed { line: i, name: label_name.to_string() },
                         ));
                     }
                     label_names.insert(label_name);
                 } else {
                     errors.push((
                         curr_symbol..(curr_symbol + raw_line_len),
-                        CompilationError::InvalidLabelName(i, label_name.to_string()),
+                        CompilationError::InvalidLabelName { line: i, name: label_name.to_string() },
                     ));
                 }
             }
@@ -313,7 +313,7 @@ impl Compiler {
                 if !label_names.contains(&label_name) {
                     errors.push((
                         curr_symbol..(curr_symbol + line_len_raw),
-                        CompilationError::NoLabelWithSuchName(i, label_name.to_string()),
+                        CompilationError::NoLabelWithSuchName { line: i, name: label_name.to_string() },
                     ));
                 }
                 label_addresses.insert(label_name, *self.line_addresses.last().unwrap());
@@ -331,7 +331,7 @@ impl Compiler {
                                         if addr + 1 >= self.program.len() {
                                             errors.push((
                                                 curr_symbol..(curr_symbol + line_len_raw),
-                                                CompilationError::OutOfMemory(i),
+                                                CompilationError::OutOfMemory { line: i },
                                             ));
                                         }
                                         self.program[addr + 2] = (number >> 8) as u8;
@@ -363,7 +363,7 @@ impl Compiler {
                 errors.push((
                     line_start_symbol_indexes[label_line]
                         ..line_start_symbol_indexes[label_line + 1],
-                    CompilationError::NoLabelWithSuchName(label_line, label),
+                    CompilationError::NoLabelWithSuchName { line: label_line, name: label },
                 ));
             }
         }

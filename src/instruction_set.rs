@@ -105,7 +105,10 @@ pub const INSTRUCTION_SET: [InstructionInfo; 3] = [
     InstructionInfo {
         name: "nop",
         accepted_operands: AcceptedOperandTypes(0, 0),
-        executor: |_| Ok(()),
+        executor: |state| {
+            state.curr_addr += 2;
+            Ok(())
+        }
     },
     InstructionInfo {
         name: "mov",
@@ -114,14 +117,16 @@ pub const INSTRUCTION_SET: [InstructionInfo; 3] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
         executor: |state| {
-            let i = state.curr_addr;
+            let i = state.curr_addr + 1;
             let argument1 = (state.memory[i] & 0xF0) >> 4;
             let argument2 = state.memory[i] & 0x0F;
             let num;
             // Getting the moved value
             if argument2 == NUMBER_OPERAND_CODE {
+                state.curr_addr += 4;
                 num = u16::from_be_bytes([state.memory[i + 1], state.memory[i + 2]]);
             } else {
+                state.curr_addr += 2;
                 if argument2 == STACK_POINTER_OPERAND_CODE {
                     num = state.registers[4];
                 } else if argument2 >= 12 {

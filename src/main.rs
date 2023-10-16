@@ -6,12 +6,14 @@ mod executor;
 mod highlighting;
 pub mod instruction_set;
 
-use crate::compiler::{Compiler, ErrorsHighlightInfo};
-use crate::executor::ProgramExecutor;
+use crate::compiler::{CompilationError, Compiler, ErrorsHighlightInfo, MAX_PROGRAM_SIZE};
+use crate::executor::{ProgramExecutor, RuntimeError, RuntimeResult};
 use crate::highlighting::{highlight, CodeTheme};
+use crate::instruction_set::INSTRUCTION_SET;
 use eframe::egui;
-use eframe::egui::{include_image, vec2, RichText, Vec2, Visuals, Response};
 use eframe::egui::load::TexturePoll;
+use eframe::egui::{include_image, vec2, Response, RichText, Vec2, Visuals, Widget};
+use std::ops::Range;
 
 // fn main() {
 //     dbg!(regex_captures!(r"^p([0-9]|10|11|12|13|14|15)$", "p115"));
@@ -29,12 +31,20 @@ fn main() -> Result<(), eframe::Error> {
     )
 }
 
+enum ErrorPopup {
+    Ok,
+    CompilationError(CompilationError),
+    RuntimeError(RuntimeError),
+}
+
 struct MyApp {
     code: String,
     compiler: Compiler,
+    last_correct_program: [u8; MAX_PROGRAM_SIZE],
     program_executor: ProgramExecutor,
     new_pixels_per_point: f32,
     last_info_panel_height: f32,
+    error: ErrorPopup,
 }
 
 impl Default for MyApp {
@@ -49,9 +59,11 @@ stop
 a:"
             .into(),
             compiler: Compiler::build(),
+            last_correct_program: [0; MAX_PROGRAM_SIZE],
             program_executor: ProgramExecutor::new(),
             new_pixels_per_point: 2.5,
             last_info_panel_height: 0.0,
+            error: ErrorPopup::Ok,
         }
     }
 }
@@ -155,7 +167,7 @@ impl MyApp {
         ui.end_row()
     }
 
-    fn draw_registers_grid_contents(&mut self, ui: &mut egui::Ui) {
+    fn draw_registers_grid(&mut self, ui: &mut egui::Ui) {
         ui.label(RichText::new("reg").size(8.0));
         ui.label(RichText::new("binary").size(8.0));
         ui.label(RichText::new("hex").size(8.0));
@@ -171,7 +183,29 @@ impl MyApp {
         self.draw_register_info_row(ui, "PS", self.program_executor.program_state_reg);
     }
 
-    fn settings_and_info_panel_ui(&mut self, ui: &mut egui::Ui) {
+    fn try_execute_next_instruction(&mut self) -> RuntimeResult<()> {
+        self.program_executor.has_finished = false;
+        let instruction = self
+            .program_executor
+            .read_u8(self.program_executor.curr_addr as u16)?;
+        let Some(info) = INSTRUCTION_SET.get(instruction as usize) else {
+            self.program_executor.has_finished = true;
+            return Err(RuntimeError::InvalidInstruction(
+                self.program_executor.curr_addr,
+                instruction,
+            ));
+        };
+        (info.executor)(&mut self.program_executor)
+    }
+
+    fn execute_next_instruction(&mut self) {
+        if let Err(err) = self.try_execute_next_instruction() {
+            self.program_executor.has_finished = true;
+            self.error = ErrorPopup::RuntimeError(err);
+        };
+    }
+
+    fn settings_and_info_panel_ui(&mut self, ui: &mut egui::Ui, errors: &ErrorsHighlightInfo) {
         let mut is_dark_mode = ui.ctx().style().visuals.dark_mode;
         ui.horizontal(|ui| {
             ui.label("Ui scale:");
@@ -193,12 +227,10 @@ impl MyApp {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Registers").strong().size(14.0));
             ui.separator();
-            if ui.add(egui::ImageButton::new(egui::Image::new(include_image!("../data/Run button.png")).fit_to_exact_size(Vec2::splat(10.0)))).clicked() {
-
+            if ui.button("Run").clicked() {
+                self.execute_next_instruction();
             }
-            if ui.add(egui::ImageButton::new(egui::Image::new(include_image!("../data/Debug button.png")).fit_to_exact_size(Vec2::splat(10.0)))).clicked() {
-
-            }
+            if ui.button("Debug").clicked() {}
         });
         ui.end_row();
         egui::Grid::new("Settings and info")
@@ -206,8 +238,70 @@ impl MyApp {
             .min_col_width(0.0)
             .spacing(vec2(12.0, 4.0))
             .show(ui, |ui| {
-                self.draw_registers_grid_contents(ui);
+                self.draw_registers_grid(ui);
             });
+        // ui.add(egui::Separator::default().vertical().spacing(10.0));
+        self.error_messages_list_ui(ui, &errors);
+    }
+
+    fn error_messages_list_ui(&mut self, ui: &mut egui::Ui, errors: &ErrorsHighlightInfo) {
+        let mut error_messages: Vec<String> =
+            errors.iter().map(|(_, err)| format!("{err}")).collect();
+        if error_messages.is_empty() {
+            return;
+        }
+        error_messages.sort_unstable();
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::TextEdit::multiline(&mut error_messages.join("\n").as_str())
+                .desired_rows(0)
+                .ui(ui);
+        });
+    }
+
+    fn show_runtime_error_popup(&self, ctx: &egui::Context) {
+        let (title, text) = match &self.error {
+            ErrorPopup::Ok => return,
+            ErrorPopup::CompilationError(err) => ("Compilation error", err.to_string()),
+            ErrorPopup::RuntimeError(err) => ("Runtime error", err.to_string()),
+        };
+        egui::Window::new(title).show(ctx, |ui| {
+            ui.label(text);
+        });
+    }
+
+    fn get_binary_viewer_rows(&self, rows_range: Range<usize>) -> String {
+        let range = (rows_range.start * 8)..(rows_range.end * 8).min(MAX_PROGRAM_SIZE);
+        let mut program_text = String::with_capacity(rows_range.len() * 8);
+        for i in range.clone() {
+            if (i & 0b111) == 0 {
+                if i != range.start {
+                    program_text += "\n";
+                }
+                program_text += &format!("{:#06x}: ", i).to_ascii_uppercase().as_str()[2..];
+            } else {
+                program_text += " ";
+            }
+            program_text += &format!("{:#04x}", self.last_correct_program[i])
+                .to_ascii_uppercase()[2..];
+        }
+        program_text
+    }
+
+    fn binary_viewer_ui(&self, ui: &mut egui::Ui) {
+        ui.push_id("Binary code viewer", |ui| {
+            let text_style = egui::TextStyle::Body;
+            let row_height = ui.text_style_height(&text_style);
+            egui::ScrollArea::vertical()
+                .min_scrolled_height(ui.available_height())
+                .show_rows(ui, row_height, MAX_PROGRAM_SIZE / 8, |ui, rows_range| {
+                    let text = self.get_binary_viewer_rows(rows_range.start..(rows_range.end + 5));
+                    ui.add(
+                        egui::TextEdit::multiline(&mut text.as_str())
+                            .code_editor()
+                            .desired_rows(1),
+                    );
+                });
+        });
     }
 }
 
@@ -216,6 +310,11 @@ impl eframe::App for MyApp {
         let theme = CodeTheme::from_memory(ctx);
         egui_extras::install_image_loaders(ctx);
         let errors = self.compiler.compile_code(&self.code);
+        if let Some(err) = errors.first() {
+            self.error = ErrorPopup::CompilationError(err.1.clone());
+        } else {
+            self.last_correct_program = self.compiler.program.clone();
+        }
         egui::TopBottomPanel::top("Light bulbs and registers")
             .resizable(true)
             .min_height(self.last_info_panel_height)
@@ -228,44 +327,24 @@ impl eframe::App for MyApp {
                 ui.horizontal_top(|ui| {
                     self.light_bulbs_panel_ui(ui, lamp_size);
                     ui.add(egui::Separator::default().vertical().spacing(10.0));
-                    self.last_info_panel_height = ui.vertical(|ui| {
-                        self.settings_and_info_panel_ui(ui);
+                    ui.horizontal_top(|ui| {
+                        self.last_info_panel_height = ui
+                            .vertical(|ui| {
+                                self.settings_and_info_panel_ui(ui, &errors);
+                            })
+                            .response
+                            .rect
+                            .height();
                         theme.apply_bg_color(ui);
-                    }).response.rect.height();
+                    });
                 });
             });
         egui::CentralPanel::default().show(ctx, |ui| {
             theme.clone().store_in_memory(ui.ctx());
             ui.horizontal_top(|ui| {
                 self.code_editor_ui(ui, &theme, &errors);
-                let mut program_text = String::with_capacity(12288);
-                for i in 0..self.compiler.program.len() {
-                    program_text += format!("{:#04x}", self.compiler.program[i])[2..]
-                        .to_ascii_uppercase()
-                        .as_str();
-                    if (i & 0b111) == 0b111 {
-                        program_text += "\n";
-                    } else {
-                        program_text += " ";
-                    }
-                }
-                code_view_ui(ui, &mut program_text);
+                self.binary_viewer_ui(ui);
             });
         });
     }
-}
-
-/// View some code with syntax highlighting and selection.
-pub fn code_view_ui(ui: &mut egui::Ui, mut code: &str) {
-    ui.push_id(99999, |ui| {
-        egui::ScrollArea::vertical()
-            .min_scrolled_height(ui.available_height())
-            .show(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::multiline(&mut code)
-                        .code_editor()
-                        .desired_rows(1),
-                );
-            });
-    });
 }
