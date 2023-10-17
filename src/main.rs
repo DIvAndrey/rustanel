@@ -11,9 +11,9 @@ use crate::executor::{ProgramExecutor, RuntimeError, RuntimeResult};
 use crate::highlighting::{highlight, CodeTheme};
 use crate::instruction_set::INSTRUCTION_SET;
 use eframe::egui;
-use eframe::egui::load::TexturePoll;
-use eframe::egui::{include_image, vec2, Response, RichText, Vec2, Visuals, Widget};
+use eframe::egui::{include_image, vec2, RichText, Vec2, Visuals, Widget};
 use std::ops::Range;
+use lazy_regex::regex_captures;
 
 // fn main() {
 //     dbg!(regex_captures!(r"^p([0-9]|10|11|12|13|14|15)$", "p115"));
@@ -240,7 +240,7 @@ impl MyApp {
             .show(ui, |ui| {
                 self.draw_registers_grid(ui);
             });
-        // ui.add(egui::Separator::default().vertical().spacing(10.0));
+        ui.add(egui::Separator::default().spacing(10.0));
         self.error_messages_list_ui(ui, &errors);
     }
 
@@ -250,7 +250,8 @@ impl MyApp {
         if error_messages.is_empty() {
             return;
         }
-        error_messages.sort_unstable();
+        error_messages.sort_unstable_by_key(|x| regex_captures!(r"^line (\d+):.*$", x.as_str())
+             .expect("Error text doesn't match the pattern").1.parse::<u32>().expect("Incorrect line number"));
         egui::ScrollArea::vertical().show(ui, |ui| {
             egui::TextEdit::multiline(&mut error_messages.join("\n").as_str())
                 .desired_rows(0)
