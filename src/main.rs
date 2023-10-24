@@ -13,7 +13,6 @@ use crate::instruction_set::INSTRUCTION_SET;
 use eframe::egui;
 use eframe::egui::{include_image, vec2, RichText, Vec2, Visuals, Widget};
 use std::ops::Range;
-use lazy_regex::regex_captures;
 
 // fn main() {
 //     dbg!(regex_captures!(r"^p([0-9]|10|11|12|13|14|15)$", "p115"));
@@ -22,6 +21,7 @@ use lazy_regex::regex_captures;
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
         initial_window_size: Some(vec2(1280.0, 960.0)),
+        renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
     eframe::run_native(
@@ -31,20 +31,19 @@ fn main() -> Result<(), eframe::Error> {
     )
 }
 
-enum ErrorPopup {
-    Ok,
+pub enum ErrorPopupInfo {
     CompilationError(CompilationError),
     RuntimeError(RuntimeError),
+    None,
 }
 
 struct MyApp {
     code: String,
     compiler: Compiler,
-    last_correct_program: [u8; MAX_PROGRAM_SIZE],
     program_executor: ProgramExecutor,
     new_pixels_per_point: f32,
     last_info_panel_height: f32,
-    error: ErrorPopup,
+    error_popup_info: ErrorPopupInfo,
 }
 
 impl Default for MyApp {
@@ -59,11 +58,10 @@ stop
 a:"
             .into(),
             compiler: Compiler::build(),
-            last_correct_program: [0; MAX_PROGRAM_SIZE],
             program_executor: ProgramExecutor::new(),
             new_pixels_per_point: 2.5,
             last_info_panel_height: 0.0,
-            error: ErrorPopup::Ok,
+            error_popup_info: ErrorPopupInfo::None,
         }
     }
 }
@@ -184,6 +182,7 @@ impl MyApp {
     }
 
     fn try_execute_next_instruction(&mut self) -> RuntimeResult<()> {
+        self.error_popup_info = ErrorPopupInfo::None;
         self.program_executor.has_finished = false;
         let instruction = self
             .program_executor
@@ -199,9 +198,13 @@ impl MyApp {
     }
 
     fn execute_next_instruction(&mut self) {
-        if let Err(err) = self.try_execute_next_instruction() {
-            self.program_executor.has_finished = true;
-            self.error = ErrorPopup::RuntimeError(err);
+        self.program_executor.has_finished = false;
+        match self.try_execute_next_instruction() {
+            Err(err) => {
+                self.program_executor.has_finished = true;
+                self.error_popup_info = ErrorPopupInfo::RuntimeError(err);
+            }
+            Ok(_) => {}
         };
     }
 
@@ -228,9 +231,24 @@ impl MyApp {
             ui.label(RichText::new("Registers").strong().size(14.0));
             ui.separator();
             if ui.button("Run").clicked() {
+                self.program_executor.make_ready_for_a_run();
+                self.program_executor.is_in_debug_mode = false;
+                if let Some(err) = self.compiler.errors.first() {
+                    self.error_popup_info = ErrorPopupInfo::CompilationError(err.1.clone());
+                }
                 self.execute_next_instruction();
             }
-            if ui.button("Debug").clicked() {}
+            if ui.button("Debug").clicked() {
+
+            }
+            if ui.button("Clear registers").clicked() {
+                for i in 0..4 {
+                    self.program_executor.registers[i] = 0;
+                }
+            }
+            if !self.program_executor.has_finished && !self.program_executor.is_in_debug_mode {
+                self.execute_next_instruction();
+            }
         });
         ui.end_row();
         egui::Grid::new("Settings and info")
@@ -240,7 +258,7 @@ impl MyApp {
             .show(ui, |ui| {
                 self.draw_registers_grid(ui);
             });
-        ui.add(egui::Separator::default().spacing(10.0));
+        // ui.add(egui::Separator::default().vertical().spacing(10.0));
         self.error_messages_list_ui(ui, &errors);
     }
 
@@ -250,8 +268,7 @@ impl MyApp {
         if error_messages.is_empty() {
             return;
         }
-        error_messages.sort_unstable_by_key(|x| regex_captures!(r"^line (\d+):.*$", x.as_str())
-             .expect("Error text doesn't match the pattern").1.parse::<u32>().expect("Incorrect line number"));
+        error_messages.sort_unstable();
         egui::ScrollArea::vertical().show(ui, |ui| {
             egui::TextEdit::multiline(&mut error_messages.join("\n").as_str())
                 .desired_rows(0)
@@ -259,11 +276,11 @@ impl MyApp {
         });
     }
 
-    fn show_runtime_error_popup(&self, ctx: &egui::Context) {
-        let (title, text) = match &self.error {
-            ErrorPopup::Ok => return,
-            ErrorPopup::CompilationError(err) => ("Compilation error", err.to_string()),
-            ErrorPopup::RuntimeError(err) => ("Runtime error", err.to_string()),
+    fn show_error_popup(&self, ctx: &egui::Context) {
+        let (title, text) = match &self.error_popup_info {
+            ErrorPopupInfo::None => return,
+            ErrorPopupInfo::CompilationError(err) => ("Compilation error", err.to_string()),
+            ErrorPopupInfo::RuntimeError(err) => ("Runtime error", err.to_string()),
         };
         egui::Window::new(title).show(ctx, |ui| {
             ui.label(text);
@@ -282,7 +299,7 @@ impl MyApp {
             } else {
                 program_text += " ";
             }
-            program_text += &format!("{:#04x}", self.last_correct_program[i])
+            program_text += &format!("{:#04x}", self.program_executor.memory[i])
                 .to_ascii_uppercase()[2..];
         }
         program_text
@@ -310,11 +327,9 @@ impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let theme = CodeTheme::from_memory(ctx);
         egui_extras::install_image_loaders(ctx);
-        let errors = self.compiler.compile_code(&self.code);
-        if let Some(err) = errors.first() {
-            self.error = ErrorPopup::CompilationError(err.1.clone());
-        } else {
-            self.last_correct_program = self.compiler.program.clone();
+        self.compiler.compile_code(&self.code);
+        if self.compiler.errors.is_empty() {
+            self.program_executor.memory = self.compiler.program.clone();
         }
         egui::TopBottomPanel::top("Light bulbs and registers")
             .resizable(true)
@@ -331,7 +346,7 @@ impl eframe::App for MyApp {
                     ui.horizontal_top(|ui| {
                         self.last_info_panel_height = ui
                             .vertical(|ui| {
-                                self.settings_and_info_panel_ui(ui, &errors);
+                                self.settings_and_info_panel_ui(ui, &self.compiler.errors.clone());
                             })
                             .response
                             .rect
@@ -343,9 +358,13 @@ impl eframe::App for MyApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             theme.clone().store_in_memory(ui.ctx());
             ui.horizontal_top(|ui| {
-                self.code_editor_ui(ui, &theme, &errors);
+                self.code_editor_ui(ui, &theme, &self.compiler.errors.clone());
                 self.binary_viewer_ui(ui);
             });
         });
+        self.show_error_popup(ctx);
+        if !self.program_executor.has_finished && !self.program_executor.is_in_debug_mode {
+            ctx.request_repaint();
+        }
     }
 }

@@ -105,8 +105,8 @@ pub const INSTRUCTION_SET: [InstructionInfo; 3] = [
     InstructionInfo {
         name: "nop",
         accepted_operands: AcceptedOperandTypes(0, 0),
-        executor: |state| {
-            state.curr_addr += 2;
+        executor: |executor| {
+            executor.add_to_pc(2);
             Ok(())
         }
     },
@@ -116,42 +116,42 @@ pub const INSTRUCTION_SET: [InstructionInfo; 3] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: |state| {
-            let i = state.curr_addr + 1;
-            let argument1 = (state.memory[i] & 0xF0) >> 4;
-            let argument2 = state.memory[i] & 0x0F;
+        executor: |executor| {
+            let i = executor.curr_addr + 1;
+            let argument1 = (executor.memory[i] & 0xF0) >> 4;
+            let argument2 = executor.memory[i] & 0x0F;
             let num;
             // Getting the moved value
             if argument2 == NUMBER_OPERAND_CODE {
-                state.curr_addr += 4;
-                num = u16::from_be_bytes([state.memory[i + 1], state.memory[i + 2]]);
+                executor.add_to_pc(4);
+                num = u16::from_be_bytes([executor.memory[i + 1], executor.memory[i + 2]]);
             } else {
-                state.curr_addr += 2;
+                executor.add_to_pc(2);
                 if argument2 == STACK_POINTER_OPERAND_CODE {
-                    num = state.registers[4];
+                    num = executor.registers[4];
                 } else if argument2 >= 12 {
                     return Err(RuntimeError::InvalidOperand(i, argument2));
                 } else if argument2 >= 8 {
-                    num = state.read_u16(state.registers[argument2 as usize - 8])?;
-                    state.registers[argument2 as usize - 8] += 1;
+                    num = executor.read_u16(executor.registers[argument2 as usize - 8])?;
+                    executor.registers[argument2 as usize - 8] += 2;
                 } else if argument2 >= 4 {
-                    num = state.read_u16(state.registers[argument2 as usize - 4])?;
+                    num = executor.read_u16(executor.registers[argument2 as usize - 4])?;
                 } else {
-                    num = state.registers[argument2 as usize];
+                    num = executor.registers[argument2 as usize];
                 };
             };
             // Assigning value
-            if argument2 == STACK_POINTER_OPERAND_CODE {
-                state.registers[4] = num;
+            if argument1 == STACK_POINTER_OPERAND_CODE {
+                executor.registers[4] = num;
             } else if argument1 >= 12 {
                 return Err(RuntimeError::InvalidOperand(i, argument1));
-            } else if argument2 >= 8 {
-                state.write_u16(state.registers[argument1 as usize - 8], num)?;
-                state.registers[argument1 as usize - 8] += 1;
+            } else if argument1 >= 8 {
+                executor.write_u16(executor.registers[argument1 as usize - 8], num)?;
+                executor.registers[argument1 as usize - 8] += 2;
             } else if argument1 >= 4 {
-                state.write_u16(state.registers[argument1 as usize - 4], num)?;
+                executor.write_u16(executor.registers[argument1 as usize - 4], num)?;
             } else {
-                state.registers[argument1 as usize] = num
+                executor.registers[argument1 as usize] = num
             };
             Ok(())
         },
@@ -159,8 +159,8 @@ pub const INSTRUCTION_SET: [InstructionInfo; 3] = [
     InstructionInfo {
         name: "stop",
         accepted_operands: AcceptedOperandTypes(0, 0),
-        executor: |state| {
-            state.has_finished = true;
+        executor: |executor| {
+            executor.has_finished = true;
             Ok(())
         },
     },

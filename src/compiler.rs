@@ -19,6 +19,7 @@ pub struct Compiler {
     label_mentions_in_program: Vec<(String, (usize, usize))>,
     line_addresses: Vec<usize>,
     line_i: usize,
+    pub errors: ErrorsHighlightInfo,
 }
 
 #[derive(Debug, Hash, Clone)]
@@ -84,6 +85,7 @@ impl Compiler {
             label_mentions_in_program: vec![],
             line_addresses: vec![],
             line_i: 0,
+            errors: vec![],
         }
     }
 
@@ -264,7 +266,7 @@ impl Compiler {
         line.trim().splitn(2, ';').next().unwrap()
     }
 
-    pub fn compile_code(&mut self, asm_code: &str) -> ErrorsHighlightInfo {
+    pub fn compile_code(&mut self, asm_code: &str) {
         self.program = [0; MAX_PROGRAM_SIZE];
         let asm_code = asm_code.to_lowercase();
         let lines: Vec<(usize, &str)> = asm_code.split('\n').enumerate().collect();
@@ -367,6 +369,6 @@ impl Compiler {
                 ));
             }
         }
-        errors
+        self.errors = errors;
     }
 }

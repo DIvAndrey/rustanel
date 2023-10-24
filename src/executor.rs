@@ -8,6 +8,7 @@ pub struct ProgramExecutor {
     pub memory: [u8; MAX_PROGRAM_SIZE],
     pub display: [u16; 16],
     pub has_finished: bool,
+    pub is_in_debug_mode: bool,
     pub curr_addr: usize,
 }
 
@@ -18,9 +19,16 @@ impl ProgramExecutor {
             program_state_reg: 0,
             memory: [0; MAX_PROGRAM_SIZE],
             display: [0; 16],
-            has_finished: false,
+            has_finished: true,
+            is_in_debug_mode: false,
             curr_addr: 0,
         }
+    }
+
+    pub fn make_ready_for_a_run(&mut self) {
+        self.curr_addr = 0;
+        self.registers[4] = (MAX_PROGRAM_SIZE - 1) as u16;
+        self.has_finished = true;
     }
 
     pub fn read_u8(&self, addr: u16) -> RuntimeResult<u8> {
@@ -60,6 +68,13 @@ impl ProgramExecutor {
         let instruction_code = self.read_u8(self.curr_addr as u16)?;
         let executor = &INSTRUCTION_SET[instruction_code as usize].executor;
         executor(self)
+    }
+
+    pub fn add_to_pc(&mut self, n: usize) {
+        self.curr_addr = self.curr_addr.wrapping_add(n);
+        if self.curr_addr >= MAX_PROGRAM_SIZE {
+            self.curr_addr -= MAX_PROGRAM_SIZE;
+        }
     }
 }
 
