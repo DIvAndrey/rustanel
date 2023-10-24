@@ -11,7 +11,7 @@ use crate::executor::{ProgramExecutor, RuntimeError, RuntimeResult};
 use crate::highlighting::{highlight, CodeTheme};
 use crate::instruction_set::INSTRUCTION_SET;
 use eframe::egui;
-use eframe::egui::{include_image, vec2, RichText, Vec2, Visuals, Widget};
+use eframe::egui::{include_image, vec2, Color32, RichText, Vec2, Visuals, Widget, Align2};
 use std::ops::Range;
 
 // fn main() {
@@ -198,6 +198,11 @@ impl MyApp {
     }
 
     fn execute_next_instruction(&mut self) {
+        if let Some(err) = self.compiler.errors.first() {
+            self.program_executor.has_finished = true;
+            self.error_popup_info = ErrorPopupInfo::CompilationError(err.1.clone());
+            return;
+        }
         self.program_executor.has_finished = false;
         match self.try_execute_next_instruction() {
             Err(err) => {
@@ -238,9 +243,7 @@ impl MyApp {
                 }
                 self.execute_next_instruction();
             }
-            if ui.button("Debug").clicked() {
-
-            }
+            if ui.button("Debug").clicked() {}
             if ui.button("Clear registers").clicked() {
                 for i in 0..4 {
                     self.program_executor.registers[i] = 0;
@@ -258,7 +261,6 @@ impl MyApp {
             .show(ui, |ui| {
                 self.draw_registers_grid(ui);
             });
-        // ui.add(egui::Separator::default().vertical().spacing(10.0));
         self.error_messages_list_ui(ui, &errors);
     }
 
@@ -276,15 +278,24 @@ impl MyApp {
         });
     }
 
-    fn show_error_popup(&self, ctx: &egui::Context) {
+    fn show_error_popup(&mut self, ctx: &egui::Context) {
         let (title, text) = match &self.error_popup_info {
             ErrorPopupInfo::None => return,
             ErrorPopupInfo::CompilationError(err) => ("Compilation error", err.to_string()),
             ErrorPopupInfo::RuntimeError(err) => ("Runtime error", err.to_string()),
         };
-        egui::Window::new(title).show(ctx, |ui| {
-            ui.label(text);
-        });
+        let mut is_opened = !matches!(&self.error_popup_info, ErrorPopupInfo::None);
+        egui::Window::new(RichText::new(title).color(Color32::RED))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .open(&mut is_opened)
+            .show(ctx, |ui| {
+                ui.label(text);
+            });
+        if !is_opened {
+            self.error_popup_info = ErrorPopupInfo::None;
+        }
     }
 
     fn get_binary_viewer_rows(&self, rows_range: Range<usize>) -> String {
@@ -299,8 +310,8 @@ impl MyApp {
             } else {
                 program_text += " ";
             }
-            program_text += &format!("{:#04x}", self.program_executor.memory[i])
-                .to_ascii_uppercase()[2..];
+            program_text +=
+                &format!("{:#04x}", self.program_executor.memory[i]).to_ascii_uppercase()[2..];
         }
         program_text
     }
@@ -325,6 +336,7 @@ impl MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.show_error_popup(ctx);
         let theme = CodeTheme::from_memory(ctx);
         egui_extras::install_image_loaders(ctx);
         self.compiler.compile_code(&self.code);
@@ -362,7 +374,6 @@ impl eframe::App for MyApp {
                 self.binary_viewer_ui(ui);
             });
         });
-        self.show_error_popup(ctx);
         if !self.program_executor.has_finished && !self.program_executor.is_in_debug_mode {
             ctx.request_repaint();
         }
