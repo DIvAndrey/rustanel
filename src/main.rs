@@ -11,12 +11,9 @@ use crate::executor::{ProgramExecutor, RuntimeError, RuntimeResult};
 use crate::highlighting::{highlight, CodeTheme};
 use crate::instruction_set::INSTRUCTION_SET;
 use eframe::egui;
-use eframe::egui::{include_image, vec2, Color32, RichText, Vec2, Visuals, Widget, Align2};
+use eframe::egui::{include_image, vec2, Color32, RichText, Vec2, Visuals, Widget, Align2, TextFormat};
 use std::ops::Range;
-
-// fn main() {
-//     dbg!(regex_captures!(r"^p([0-9]|10|11|12|13|14|15)$", "p115"));
-// }
+use eframe::epaint::text::LayoutJob;
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
@@ -298,22 +295,32 @@ impl MyApp {
         }
     }
 
-    fn get_binary_viewer_rows(&self, rows_range: Range<usize>) -> String {
+    fn get_binary_viewer_rows(&self, rows_range: Range<usize>) -> LayoutJob {
+        let mut layout_job = LayoutJob::default();
+        layout_job.text.reserve(rows_range.len() * 8);
         let range = (rows_range.start * 8)..(rows_range.end * 8).min(MAX_PROGRAM_SIZE);
-        let mut program_text = String::with_capacity(rows_range.len() * 8);
         for i in range.clone() {
             if (i & 0b111) == 0 {
                 if i != range.start {
-                    program_text += "\n";
+                    layout_job.append("\n", 0.0, TextFormat::default());
                 }
-                program_text += &format!("{:#06x}: ", i).to_ascii_uppercase().as_str()[2..];
+                layout_job.append(
+                    &format!("{:#06x}: ", i).to_ascii_uppercase().as_str()[2..],
+                    0.0,
+                    TextFormat::default()
+                );
             } else {
-                program_text += " ";
+                layout_job.append(
+                    " ",
+                    0.0,
+                    TextFormat::default());
             }
-            program_text +=
-                &format!("{:#04x}", self.program_executor.memory[i]).to_ascii_uppercase()[2..];
+            layout_job.append(
+                &format!("{:#04x}", self.program_executor.memory[i]).to_ascii_uppercase()[2..],
+                0.0,
+                TextFormat::default());
         }
-        program_text
+        layout_job
     }
 
     fn binary_viewer_ui(&self, ui: &mut egui::Ui) {
@@ -323,9 +330,10 @@ impl MyApp {
             egui::ScrollArea::vertical()
                 .min_scrolled_height(ui.available_height())
                 .show_rows(ui, row_height, MAX_PROGRAM_SIZE / 8, |ui, rows_range| {
-                    let text = self.get_binary_viewer_rows(rows_range.start..(rows_range.end + 5));
+                    let mut layout_job = self.get_binary_viewer_rows(rows_range.start..(rows_range.end + 5));
                     ui.add(
-                        egui::TextEdit::multiline(&mut text.as_str())
+                        egui::TextEdit::multiline(&mut layout_job.text.as_str())
+                            .layouter(&mut layout_job)
                             .code_editor()
                             .desired_rows(1),
                     );
