@@ -11,9 +11,11 @@ use crate::executor::{ProgramExecutor, RuntimeError, RuntimeResult};
 use crate::highlighting::{highlight, CodeTheme};
 use crate::instruction_set::INSTRUCTION_SET;
 use eframe::egui;
-use eframe::egui::{include_image, vec2, Color32, RichText, Vec2, Visuals, Widget, Align2, TextFormat};
-use std::ops::Range;
+use eframe::egui::{
+    include_image, vec2, Align2, Color32, FontId, RichText, TextFormat, Vec2, Visuals, Widget,
+};
 use eframe::epaint::text::LayoutJob;
+use std::ops::Range;
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
@@ -180,7 +182,6 @@ impl MyApp {
 
     fn try_execute_next_instruction(&mut self) -> RuntimeResult<()> {
         self.error_popup_info = ErrorPopupInfo::None;
-        self.program_executor.has_finished = false;
         let instruction = self
             .program_executor
             .read_u8(self.program_executor.curr_addr as u16)?;
@@ -195,12 +196,9 @@ impl MyApp {
     }
 
     fn execute_next_instruction(&mut self) {
-        if let Some(err) = self.compiler.errors.first() {
-            self.program_executor.has_finished = true;
-            self.error_popup_info = ErrorPopupInfo::CompilationError(err.1.clone());
+        if self.check_for_compilation_errors() {
             return;
         }
-        self.program_executor.has_finished = false;
         match self.try_execute_next_instruction() {
             Err(err) => {
                 self.program_executor.has_finished = true;
@@ -208,6 +206,15 @@ impl MyApp {
             }
             Ok(_) => {}
         };
+    }
+
+    fn check_for_compilation_errors(&mut self) -> bool {
+        if let Some(err) = self.compiler.errors.first() {
+            self.program_executor.has_finished = true;
+            self.error_popup_info = ErrorPopupInfo::CompilationError(err.1.clone());
+            return true;
+        }
+        false
     }
 
     fn settings_and_info_panel_ui(&mut self, ui: &mut egui::Ui, errors: &ErrorsHighlightInfo) {
@@ -233,14 +240,18 @@ impl MyApp {
             ui.label(RichText::new("Registers").strong().size(14.0));
             ui.separator();
             if ui.button("Run").clicked() {
-                self.program_executor.make_ready_for_a_run();
+                self.program_executor.prepare_for_a_new_run();
                 self.program_executor.is_in_debug_mode = false;
-                if let Some(err) = self.compiler.errors.first() {
-                    self.error_popup_info = ErrorPopupInfo::CompilationError(err.1.clone());
-                }
                 self.execute_next_instruction();
             }
-            if ui.button("Debug").clicked() {}
+            if ui.button("Step over").clicked() {
+                if self.program_executor.has_finished && !self.check_for_compilation_errors() {
+                    self.program_executor.prepare_for_a_new_run();
+                    self.program_executor.is_in_debug_mode = true;
+                } else {
+                    self.execute_next_instruction();
+                }
+            }
             if ui.button("Clear registers").clicked() {
                 for i in 0..4 {
                     self.program_executor.registers[i] = 0;
@@ -299,26 +310,37 @@ impl MyApp {
         let mut layout_job = LayoutJob::default();
         layout_job.text.reserve(rows_range.len() * 8);
         let range = (rows_range.start * 8)..(rows_range.end * 8).min(MAX_PROGRAM_SIZE);
+        let text_format = TextFormat {
+            font_id: FontId::monospace(14.0),
+            ..Default::default()
+        };
+        let highlighted_format = TextFormat {
+            font_id: FontId::monospace(14.0),
+            color: Color32::LIGHT_BLUE,
+            ..Default::default()
+        };
         for i in range.clone() {
             if (i & 0b111) == 0 {
                 if i != range.start {
-                    layout_job.append("\n", 0.0, TextFormat::default());
+                    layout_job.append("\n", 0.0, text_format.clone());
                 }
                 layout_job.append(
                     &format!("{:#06x}: ", i).to_ascii_uppercase().as_str()[2..],
                     0.0,
-                    TextFormat::default()
+                    text_format.clone(),
                 );
             } else {
-                layout_job.append(
-                    " ",
-                    0.0,
-                    TextFormat::default());
+                layout_job.append(" ", 0.0, text_format.clone());
             }
             layout_job.append(
                 &format!("{:#04x}", self.program_executor.memory[i]).to_ascii_uppercase()[2..],
                 0.0,
-                TextFormat::default());
+                if i == self.program_executor.curr_addr && !self.program_executor.has_finished {
+                    highlighted_format.clone()
+                } else {
+                    text_format.clone()
+                },
+            );
         }
         layout_job
     }
@@ -330,10 +352,14 @@ impl MyApp {
             egui::ScrollArea::vertical()
                 .min_scrolled_height(ui.available_height())
                 .show_rows(ui, row_height, MAX_PROGRAM_SIZE / 8, |ui, rows_range| {
-                    let mut layout_job = self.get_binary_viewer_rows(rows_range.start..(rows_range.end + 5));
+                    let mut layout_job =
+                        self.get_binary_viewer_rows(rows_range.start..(rows_range.end + 5));
                     ui.add(
-                        egui::TextEdit::multiline(&mut layout_job.text.as_str())
-                            .layouter(&mut layout_job)
+                        egui::TextEdit::multiline(&mut layout_job.clone().text.as_str())
+                            .layouter(&mut |ui: &egui::Ui, string: &str, wrap_width: f32| {
+                                layout_job.wrap.max_width = wrap_width;
+                                ui.fonts(|f| f.layout_job(layout_job.clone()))
+                            })
                             .code_editor()
                             .desired_rows(1),
                     );

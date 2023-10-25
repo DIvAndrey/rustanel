@@ -25,10 +25,10 @@ impl ProgramExecutor {
         }
     }
 
-    pub fn make_ready_for_a_run(&mut self) {
+    pub fn prepare_for_a_new_run(&mut self) {
         self.curr_addr = 0;
         self.registers[4] = (MAX_PROGRAM_SIZE - 1) as u16;
-        self.has_finished = true;
+        self.has_finished = false;
     }
 
     pub fn read_u8(&self, addr: u16) -> RuntimeResult<u8> {
