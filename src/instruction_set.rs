@@ -1,8 +1,6 @@
 use crate::executor::{ProgramExecutor, RuntimeError, RuntimeResult};
 
-pub const STACK_POINTER_OPERAND_CODE: u8 = 0xC;
-pub const NUMBER_OPERAND_CODE: u8 = 0xD;
-
+pub const NUMBER_OPERAND_CODE: u8 = 0xF;
 pub const REG_MASK: u8 = 0b00001;
 pub const ADDR_MASK: u8 = 0b00010;
 pub const ADDR_INC_MASK: u8 = 0b00100;
@@ -93,7 +91,7 @@ impl InstructionOperands {
 }
 
 // Executes a binary instruction
-pub type InstructionExecutor = fn(&mut ProgramExecutor) -> RuntimeResult<()>;
+pub type InstructionExecutor = fn(&mut ProgramExecutor, AcceptedOperandTypes) -> RuntimeResult<()>;
 
 pub struct InstructionInfo {
     pub name: &'static str,
@@ -101,13 +99,19 @@ pub struct InstructionInfo {
     pub executor: InstructionExecutor,
 }
 
-pub const INSTRUCTION_SET: [InstructionInfo; 3] = [
+pub const INSTRUCTION_SET: [InstructionInfo; 4] = [
     InstructionInfo {
         name: "nop",
         accepted_operands: AcceptedOperandTypes(0, 0),
-        executor: |executor| {
-            executor.add_to_pc(2);
-            Ok(())
+        executor: |executor, accepted_operand_types| {
+            match executor.get_current_instruction_operand_types(accepted_operand_types)? {
+                InstructionOperands::ZERO => {
+                    executor.add_to_pc(2);
+                    Ok(())
+                }
+                _ => unreachable!(),
+            }
+
         }
     },
     InstructionInfo {
@@ -116,7 +120,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 3] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: |executor| {
+        executor: |executor, accepted_operands| {
             let i = executor.curr_addr + 1;
             let argument1 = (executor.memory[i] & 0xF0) >> 4;
             let argument2 = executor.memory[i] & 0x0F;

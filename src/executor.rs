@@ -1,5 +1,10 @@
 use crate::compiler::MAX_PROGRAM_SIZE;
-use crate::instruction_set::INSTRUCTION_SET;
+use crate::instruction_set::{
+    AcceptedOperandTypes, InstructionOperand, InstructionOperands, ADDR_INC_MASK, ADDR_MASK,
+    INSTRUCTION_SET, NUMBER_MASK, NUMBER_OPERAND_CODE, PORT_MASK, REG_MASK,
+    STACK_POINTER_OPERAND_CODE,
+};
+use crate::ErrorPopupInfo::RuntimeError;
 use std::fmt::{Display, Formatter};
 
 pub struct ProgramExecutor {
@@ -59,6 +64,49 @@ impl ProgramExecutor {
         self.write_u8(addr, (new_val >> 8) as u8)?;
         self.write_u8(addr, new_val as u8)?;
         Ok(())
+    }
+
+    fn get_instruction_operand_data(
+        &self,
+        accepted_operand_types: u8,
+        operand: u8,
+    ) -> RuntimeResult<InstructionOperand> {
+        Ok(if (accepted_operand_types & PORT_MASK) != 0 {
+            InstructionOperand::Port(operand)
+        } else if (accepted_operand_types & NUMBER_MASK) != 0 && operand == NUMBER_OPERAND_CODE {
+            InstructionOperand::Number(u16::from_be_bytes([
+                self.memory[self.curr_addr + 1],
+                self.memory[self.curr_addr + 2],
+            ]))
+        } else if (accepted_operand_types & ADDR_INC_MASK) != 0 && (10..15).contains(&operand) {
+            InstructionOperand::AddrInc(operand - 10)
+        } else if (accepted_operand_types & ADDR_MASK) != 0 && (5..10).contains(&operand) {
+            InstructionOperand::Addr(operand - 5)
+        } else if (accepted_operand_types & REG_MASK) != 0 && (0..5).contains(&operand) {
+            InstructionOperand::Reg(operand)
+        } else {
+            return Err(RuntimeError::InvalidOperand(self.curr_addr, operand));
+        })
+    }
+
+    pub fn get_current_instruction_operand_types(
+        &self,
+        accepted_operand_types: AcceptedOperandTypes,
+    ) -> RuntimeResult<InstructionOperands> {
+        assert!(accepted_operand_types.0 || !accepted_operand_types.1);
+        let operands_byte = self.memory[self.curr_addr + 1];
+        let operand1 = (operands_byte >> 4) & 0xF;
+        let operand2 = operands_byte & 0xF;
+        Ok(if accepted_operand_types.0 == 0 {
+            InstructionOperands::Zero
+        } else if accepted_operand_types.1 == 0 {
+            InstructionOperands::One(self.get_instruction_operand_data(accepted_operand_types.0, operand1)?)
+        } else {
+            InstructionOperands::Two(
+                self.get_instruction_operand_data(accepted_operand_types.0, operand1)?,
+                self.get_instruction_operand_data(accepted_operand_types.0, operand1)?,
+            )
+        })
     }
 
     pub fn execute_next_instruction(&mut self) -> RuntimeResult<()> {
