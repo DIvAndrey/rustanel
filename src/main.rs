@@ -7,9 +7,8 @@ mod highlighting;
 pub mod instruction_set;
 
 use crate::compiler::{CompilationError, Compiler, ErrorsHighlightInfo, MAX_PROGRAM_SIZE};
-use crate::executor::{ProgramExecutor, RuntimeError, RuntimeResult};
+use crate::executor::{ProgramExecutor, RuntimeError};
 use crate::highlighting::{highlight, CodeTheme};
-use crate::instruction_set::INSTRUCTION_SET;
 use eframe::egui;
 use eframe::egui::{
     include_image, vec2, Align2, Color32, FontId, RichText, TextFormat, Vec2, Visuals, Widget,
@@ -49,10 +48,10 @@ impl Default for MyApp {
     fn default() -> Self {
         Self {
             code: "\
-mov (r0), (r1)+
-mov r0, @a
+mov r0, (r1)+
+mov (r0), @a
 mov r0, 1
-mov r0, @b
+mov r0, @a
 stop
 a:"
             .into(),
@@ -180,26 +179,12 @@ impl MyApp {
         self.draw_register_info_row(ui, "PS", self.program_executor.program_state_reg);
     }
 
-    fn try_execute_next_instruction(&mut self) -> RuntimeResult<()> {
-        self.error_popup_info = ErrorPopupInfo::None;
-        let instruction = self
-            .program_executor
-            .read_u8(self.program_executor.curr_addr as u16)?;
-        let Some(info) = INSTRUCTION_SET.get(instruction as usize) else {
-            self.program_executor.has_finished = true;
-            return Err(RuntimeError::InvalidInstruction(
-                self.program_executor.curr_addr,
-                instruction,
-            ));
-        };
-        (info.executor)(&mut self.program_executor)
-    }
-
     fn execute_next_instruction(&mut self) {
-        if self.check_for_compilation_errors() {
+        if self.are_there_compilation_errors() {
             return;
         }
-        match self.try_execute_next_instruction() {
+        self.error_popup_info = ErrorPopupInfo::None;
+        match self.program_executor.execute_next_instruction() {
             Err(err) => {
                 self.program_executor.has_finished = true;
                 self.error_popup_info = ErrorPopupInfo::RuntimeError(err);
@@ -208,7 +193,7 @@ impl MyApp {
         };
     }
 
-    fn check_for_compilation_errors(&mut self) -> bool {
+    fn are_there_compilation_errors(&mut self) -> bool {
         if let Some(err) = self.compiler.errors.first() {
             self.program_executor.has_finished = true;
             self.error_popup_info = ErrorPopupInfo::CompilationError(err.1.clone());
@@ -239,15 +224,28 @@ impl MyApp {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Registers").strong().size(14.0));
             ui.separator();
-            if ui.button("Run").clicked() {
-                self.program_executor.prepare_for_a_new_run();
+            if ui.button("Build").clicked() {
                 self.program_executor.is_in_debug_mode = false;
+                self.program_executor.has_finished = true;
+                if !self.are_there_compilation_errors() {
+                    self.program_executor.memory = self.compiler.program.clone();
+                }
+            }
+            if ui.button("Run").clicked() {
+                self.program_executor.is_in_debug_mode = false;
+                self.program_executor.prepare_for_a_new_run();
+                if !self.are_there_compilation_errors() {
+                    self.program_executor.memory = self.compiler.program.clone();
+                }
                 self.execute_next_instruction();
             }
             if ui.button("Step over").clicked() {
-                if self.program_executor.has_finished && !self.check_for_compilation_errors() {
-                    self.program_executor.prepare_for_a_new_run();
+                if self.program_executor.has_finished && !self.are_there_compilation_errors() {
                     self.program_executor.is_in_debug_mode = true;
+                    self.program_executor.prepare_for_a_new_run();
+                    if !self.are_there_compilation_errors() {
+                        self.program_executor.memory = self.compiler.program.clone();
+                    }
                 } else {
                     self.execute_next_instruction();
                 }
@@ -356,7 +354,7 @@ impl MyApp {
                         self.get_binary_viewer_rows(rows_range.start..(rows_range.end + 5));
                     ui.add(
                         egui::TextEdit::multiline(&mut layout_job.clone().text.as_str())
-                            .layouter(&mut |ui: &egui::Ui, string: &str, wrap_width: f32| {
+                            .layouter(&mut |ui: &egui::Ui, _: &str, wrap_width: f32| {
                                 layout_job.wrap.max_width = wrap_width;
                                 ui.fonts(|f| f.layout_job(layout_job.clone()))
                             })
@@ -374,9 +372,6 @@ impl eframe::App for MyApp {
         let theme = CodeTheme::from_memory(ctx);
         egui_extras::install_image_loaders(ctx);
         self.compiler.compile_code(&self.code);
-        if self.compiler.errors.is_empty() {
-            self.program_executor.memory = self.compiler.program.clone();
-        }
         egui::TopBottomPanel::top("Light bulbs and registers")
             .resizable(true)
             .min_height(self.last_info_panel_height)

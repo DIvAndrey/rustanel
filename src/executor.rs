@@ -1,10 +1,8 @@
 use crate::compiler::MAX_PROGRAM_SIZE;
 use crate::instruction_set::{
-    AcceptedOperandTypes, InstructionOperand, InstructionOperands, ADDR_INC_MASK, ADDR_MASK,
-    INSTRUCTION_SET, NUMBER_MASK, NUMBER_OPERAND_CODE, PORT_MASK, REG_MASK,
-    STACK_POINTER_OPERAND_CODE,
+    AcceptedOperandTypes, InstructionInfo, InstructionOperand, InstructionOperands, ADDR_INC_MASK,
+    ADDR_MASK, INSTRUCTION_SET, NUMBER_MASK, NUMBER_OPERAND_CODE, PORT_MASK, REG_MASK,
 };
-use crate::ErrorPopupInfo::RuntimeError;
 use std::fmt::{Display, Formatter};
 
 pub struct ProgramExecutor {
@@ -75,8 +73,8 @@ impl ProgramExecutor {
             InstructionOperand::Port(operand)
         } else if (accepted_operand_types & NUMBER_MASK) != 0 && operand == NUMBER_OPERAND_CODE {
             InstructionOperand::Number(u16::from_be_bytes([
-                self.memory[self.curr_addr + 1],
                 self.memory[self.curr_addr + 2],
+                self.memory[self.curr_addr + 3],
             ]))
         } else if (accepted_operand_types & ADDR_INC_MASK) != 0 && (10..15).contains(&operand) {
             InstructionOperand::AddrInc(operand - 10)
@@ -93,18 +91,20 @@ impl ProgramExecutor {
         &self,
         accepted_operand_types: AcceptedOperandTypes,
     ) -> RuntimeResult<InstructionOperands> {
-        assert!(accepted_operand_types.0 || !accepted_operand_types.1);
+        assert!(accepted_operand_types.0 == 0 || accepted_operand_types.1 != 0);
         let operands_byte = self.memory[self.curr_addr + 1];
         let operand1 = (operands_byte >> 4) & 0xF;
         let operand2 = operands_byte & 0xF;
         Ok(if accepted_operand_types.0 == 0 {
             InstructionOperands::Zero
         } else if accepted_operand_types.1 == 0 {
-            InstructionOperands::One(self.get_instruction_operand_data(accepted_operand_types.0, operand1)?)
+            InstructionOperands::One(
+                self.get_instruction_operand_data(accepted_operand_types.0, operand1)?,
+            )
         } else {
             InstructionOperands::Two(
                 self.get_instruction_operand_data(accepted_operand_types.0, operand1)?,
-                self.get_instruction_operand_data(accepted_operand_types.0, operand1)?,
+                self.get_instruction_operand_data(accepted_operand_types.1, operand2)?,
             )
         })
     }
@@ -114,8 +114,12 @@ impl ProgramExecutor {
             return Ok(());
         }
         let instruction_code = self.read_u8(self.curr_addr as u16)?;
-        let executor = &INSTRUCTION_SET[instruction_code as usize].executor;
-        executor(self)
+        let InstructionInfo {
+            accepted_operands,
+            executor,
+            ..
+        } = &INSTRUCTION_SET[instruction_code as usize];
+        executor(self, *accepted_operands)
     }
 
     pub fn add_to_pc(&mut self, n: usize) {

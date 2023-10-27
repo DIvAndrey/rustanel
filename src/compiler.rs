@@ -24,14 +24,39 @@ pub struct Compiler {
 
 #[derive(Debug, Hash, Clone)]
 pub enum CompilationError {
-    UnknownInstruction { line: usize, instruction: String },
-    NoLabelWithSuchName { line: usize, name: String },
-    InvalidOperand { line: usize, operand: String },
-    WrongNumberOfOperands { line: usize, expected: usize, found: usize },
-    WrongOperandType { line: usize, expected: String, found: String },
-    OutOfMemory { line: usize },
-    LabelNameAlreadyUsed { line: usize, name: String },
-    InvalidLabelName { line: usize, name: String },
+    UnknownInstruction {
+        line: usize,
+        instruction: String,
+    },
+    NoLabelWithSuchName {
+        line: usize,
+        name: String,
+    },
+    InvalidOperand {
+        line: usize,
+        operand: String,
+    },
+    WrongNumberOfOperands {
+        line: usize,
+        expected: usize,
+        found: usize,
+    },
+    WrongOperandType {
+        line: usize,
+        expected: String,
+        found: String,
+    },
+    OutOfMemory {
+        line: usize,
+    },
+    LabelNameAlreadyUsed {
+        line: usize,
+        name: String,
+    },
+    InvalidLabelName {
+        line: usize,
+        name: String,
+    },
 }
 
 pub type CompilationResult<T> = Result<T, CompilationError>;
@@ -48,11 +73,19 @@ impl Display for CompilationError {
             CompilationError::InvalidOperand { line, operand } => {
                 write!(f, "line {line}: Invalid operand: `{operand}`")
             }
-            CompilationError::WrongNumberOfOperands { line, expected, found } => write!(
+            CompilationError::WrongNumberOfOperands {
+                line,
+                expected,
+                found,
+            } => write!(
                 f,
                 "line {line}: Wrong number of operands: expected {expected}, found {found}"
             ),
-            CompilationError::WrongOperandType { line, expected, found } => write!(
+            CompilationError::WrongOperandType {
+                line,
+                expected,
+                found,
+            } => write!(
                 f,
                 "line {line}: Wrong operand type: expected: {expected}, found {found}"
             ),
@@ -60,7 +93,10 @@ impl Display for CompilationError {
                 write!(f, "line {line}: Program doesn't fit in memory")
             }
             CompilationError::LabelNameAlreadyUsed { line, name } => {
-                write!(f, "line {line}: A label with such name already exists: `{name}`")
+                write!(
+                    f,
+                    "line {line}: A label with such name already exists: `{name}`"
+                )
             }
             CompilationError::InvalidLabelName { line, name } => {
                 write!(f, "line {line}: `{name}` is not a correct label name")
@@ -99,8 +135,8 @@ impl Compiler {
         let mut number = None;
         match operand {
             Operand::Reg(r) if (accepted_mask & REG_MASK) != 0 => operand_byte |= r,
-            Operand::Addr(r) if (accepted_mask & ADDR_MASK) != 0 => operand_byte |= r + 4,
-            Operand::AddrInc(r) if (accepted_mask & ADDR_INC_MASK) != 0 => operand_byte |= r + 8,
+            Operand::Addr(r) if (accepted_mask & ADDR_MASK) != 0 => operand_byte |= r + 5,
+            Operand::AddrInc(r) if (accepted_mask & ADDR_INC_MASK) != 0 => operand_byte |= r + 10,
             Operand::Port(r) if (accepted_mask & PORT_MASK) != 0 => operand_byte |= r,
             Operand::Number(n) if (accepted_mask & NUMBER_MASK) != 0 => {
                 number = Some(n);
@@ -171,34 +207,28 @@ impl Compiler {
             "1" => 1,
             "2" => 2,
             "3" => 3,
-            #[cfg(debug_assertions)]
+            "sp" => 4,
             _ => unreachable!(),
-            #[cfg(not(debug_assertions))]
-            _ => unsafe { unreachable_unchecked() },
         }
     }
 
     fn parse_operand(&mut self, string: &str) -> CompilationResult<InstructionOperand> {
         let string = string.trim();
-        // Stack pointer
-        if string == "sp" {
-            return Ok(InstructionOperand::Reg(4));
-        }
         // Register
-        if let Some((_, r)) = regex_captures!(r"^r([0-3])$", string) {
+        if let Some((_, r)) = regex_captures!(r"^r([0-3]|sp)$", string) {
             return Ok(InstructionOperand::Reg(Self::str_reg_to_num(r)));
         }
         // Address in register
-        if let Some((_, r)) = regex_captures!(r"^\(r([0-3])\)$", string) {
+        if let Some((_, r)) = regex_captures!(r"^\(r([0-3]|sp)\)$", string) {
             return Ok(InstructionOperand::Addr(Self::str_reg_to_num(r)));
         }
         // Address in register with increment
-        if let Some((_, r)) = regex_captures!(r"^\(r([0-3])\)\+$", string) {
+        if let Some((_, r)) = regex_captures!(r"^\(r([0-3]|sp)\)\+$", string) {
             return Ok(InstructionOperand::AddrInc(Self::str_reg_to_num(r)));
         }
         // Port
-        if let Some((_, r)) = regex_captures!(r"^p([0-9]|10|11|12|13|14|15)$", string) {
-            return Ok(InstructionOperand::AddrInc(Self::str_reg_to_num(r)));
+        if let Some((_, r)) = regex_captures!(r"^p([0-9]|1[0-5])$", string) {
+            return Ok(InstructionOperand::AddrInc(r.parse::<u8>().unwrap()));
         }
         // Number
         if let Some(num) = wrapping_parse(string) {
@@ -253,10 +283,7 @@ impl Compiler {
             &[] => InstructionOperands::Zero,
             &[a] => InstructionOperands::One(self.parse_operand(a)?),
             &[a, b] => InstructionOperands::Two(self.parse_operand(a)?, self.parse_operand(b)?),
-            #[cfg(debug_assertions)]
             _ => unreachable!(),
-            #[cfg(not(debug_assertions))]
-            _ => unsafe { std::hint::unreachable_unchecked() }
         };
         let (operands, number) = self.conv_operands_to_binary(operands, info.accepted_operands)?;
         Ok(Some((((code as u16) << 8) | operands as u16, number)))
@@ -284,14 +311,20 @@ impl Compiler {
                     if label_names.contains(label_name) {
                         errors.push((
                             curr_symbol..(curr_symbol + raw_line_len),
-                            CompilationError::LabelNameAlreadyUsed { line: i, name: label_name.to_string() },
+                            CompilationError::LabelNameAlreadyUsed {
+                                line: i,
+                                name: label_name.to_string(),
+                            },
                         ));
                     }
                     label_names.insert(label_name);
                 } else {
                     errors.push((
                         curr_symbol..(curr_symbol + raw_line_len),
-                        CompilationError::InvalidLabelName { line: i, name: label_name.to_string() },
+                        CompilationError::InvalidLabelName {
+                            line: i,
+                            name: label_name.to_string(),
+                        },
                     ));
                 }
             }
@@ -315,7 +348,10 @@ impl Compiler {
                 if !label_names.contains(&label_name) {
                     errors.push((
                         curr_symbol..(curr_symbol + line_len_raw),
-                        CompilationError::NoLabelWithSuchName { line: i, name: label_name.to_string() },
+                        CompilationError::NoLabelWithSuchName {
+                            line: i,
+                            name: label_name.to_string(),
+                        },
                     ));
                 }
                 label_addresses.insert(label_name, *self.line_addresses.last().unwrap());
@@ -365,7 +401,10 @@ impl Compiler {
                 errors.push((
                     line_start_symbol_indexes[label_line]
                         ..line_start_symbol_indexes[label_line + 1],
-                    CompilationError::NoLabelWithSuchName { line: label_line, name: label },
+                    CompilationError::NoLabelWithSuchName {
+                        line: label_line,
+                        name: label,
+                    },
                 ));
             }
         }

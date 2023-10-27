@@ -1,4 +1,4 @@
-use crate::executor::{ProgramExecutor, RuntimeError, RuntimeResult};
+use crate::executor::{ProgramExecutor, RuntimeResult};
 
 pub const NUMBER_OPERAND_CODE: u8 = 0xF;
 pub const REG_MASK: u8 = 0b00001;
@@ -51,7 +51,7 @@ pub fn get_expected_operand_types_string(mask: u8) -> String {
     res
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum InstructionOperand {
     Reg(u8),
     Addr(u8),
@@ -73,7 +73,7 @@ impl ToString for InstructionOperand {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum InstructionOperands {
     Zero,
     One(InstructionOperand),
@@ -99,20 +99,18 @@ pub struct InstructionInfo {
     pub executor: InstructionExecutor,
 }
 
-pub const INSTRUCTION_SET: [InstructionInfo; 4] = [
+pub const INSTRUCTION_SET: [InstructionInfo; 3] = [
     InstructionInfo {
         name: "nop",
         accepted_operands: AcceptedOperandTypes(0, 0),
         executor: |executor, accepted_operand_types| {
             match executor.get_current_instruction_operand_types(accepted_operand_types)? {
-                InstructionOperands::ZERO => {
-                    executor.add_to_pc(2);
-                    Ok(())
-                }
+                InstructionOperands::Zero => {}
                 _ => unreachable!(),
             }
-
-        }
+            executor.add_to_pc(2);
+            Ok(())
+        },
     },
     InstructionInfo {
         name: "mov",
@@ -121,49 +119,49 @@ pub const INSTRUCTION_SET: [InstructionInfo; 4] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
         executor: |executor, accepted_operands| {
-            let i = executor.curr_addr + 1;
-            let argument1 = (executor.memory[i] & 0xF0) >> 4;
-            let argument2 = executor.memory[i] & 0x0F;
-            let num;
+            let InstructionOperands::Two(op1, op2) =
+                executor.get_current_instruction_operand_types(accepted_operands)?
+            else {
+                unreachable!();
+            };
             // Getting the moved value
-            if argument2 == NUMBER_OPERAND_CODE {
-                executor.add_to_pc(4);
-                num = u16::from_be_bytes([executor.memory[i + 1], executor.memory[i + 2]]);
-            } else {
-                executor.add_to_pc(2);
-                if argument2 == STACK_POINTER_OPERAND_CODE {
-                    num = executor.registers[4];
-                } else if argument2 >= 12 {
-                    return Err(RuntimeError::InvalidOperand(i, argument2));
-                } else if argument2 >= 8 {
-                    num = executor.read_u16(executor.registers[argument2 as usize - 8])?;
-                    executor.registers[argument2 as usize - 8] += 2;
-                } else if argument2 >= 4 {
-                    num = executor.read_u16(executor.registers[argument2 as usize - 4])?;
-                } else {
-                    num = executor.registers[argument2 as usize];
-                };
+            let num = match op2 {
+                InstructionOperand::Reg(reg) => executor.registers[reg as usize],
+                InstructionOperand::Addr(reg) => executor.read_u16(executor.registers[reg as usize])?,
+                InstructionOperand::AddrInc(reg) => {
+                    let num = executor.read_u16(executor.registers[reg as usize])?;
+                    executor.registers[reg as usize] = executor.registers[reg as usize].wrapping_add(2);
+                    num
+                }
+                InstructionOperand::Number(num) => {
+                    executor.add_to_pc(2);
+                    num
+                },
+                _ => unreachable!(),
             };
-            // Assigning value
-            if argument1 == STACK_POINTER_OPERAND_CODE {
-                executor.registers[4] = num;
-            } else if argument1 >= 12 {
-                return Err(RuntimeError::InvalidOperand(i, argument1));
-            } else if argument1 >= 8 {
-                executor.write_u16(executor.registers[argument1 as usize - 8], num)?;
-                executor.registers[argument1 as usize - 8] += 2;
-            } else if argument1 >= 4 {
-                executor.write_u16(executor.registers[argument1 as usize - 4], num)?;
-            } else {
-                executor.registers[argument1 as usize] = num
-            };
+            match op1 {
+                InstructionOperand::Reg(reg) => executor.registers[reg as usize] = num,
+                InstructionOperand::Addr(reg) => {
+                    executor.write_u16(executor.registers[reg as usize], num)?
+                }
+                InstructionOperand::AddrInc(reg) => {
+                    executor.write_u16(executor.registers[reg as usize], num)?;
+                    executor.registers[reg as usize] = executor.registers[reg as usize].wrapping_add(2);
+                }
+                _ => unreachable!(),
+            }
+            executor.add_to_pc(2);
             Ok(())
         },
     },
     InstructionInfo {
         name: "stop",
         accepted_operands: AcceptedOperandTypes(0, 0),
-        executor: |executor| {
+        executor: |executor, accepted_operand_types| {
+            match executor.get_current_instruction_operand_types(accepted_operand_types)? {
+                InstructionOperands::Zero => {}
+                _ => unreachable!(),
+            }
             executor.has_finished = true;
             Ok(())
         },
