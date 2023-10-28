@@ -173,7 +173,7 @@ pub fn wrapping_parse(mut text: &str) -> Option<u16> {
         return None;
     }
     let mut res = 0i32;
-    for c in text.chars().rev() {
+    for c in text.chars() {
         res = res.wrapping_mul(base as i32);
         res = res.wrapping_add(c.to_digit(base)? as i32);
     }

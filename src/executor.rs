@@ -64,7 +64,7 @@ impl ProgramExecutor {
         Ok(())
     }
 
-    fn get_instruction_operand_data(
+    fn get_instruction_operand(
         &self,
         accepted_operand_types: u8,
         operand: u8,
@@ -87,7 +87,7 @@ impl ProgramExecutor {
         })
     }
 
-    pub fn get_current_instruction_operand_types(
+    pub fn get_instruction_operands(
         &self,
         accepted_operand_types: AcceptedOperandTypes,
     ) -> RuntimeResult<InstructionOperands> {
@@ -99,12 +99,12 @@ impl ProgramExecutor {
             InstructionOperands::Zero
         } else if accepted_operand_types.1 == 0 {
             InstructionOperands::One(
-                self.get_instruction_operand_data(accepted_operand_types.0, operand1)?,
+                self.get_instruction_operand(accepted_operand_types.0, operand1)?,
             )
         } else {
             InstructionOperands::Two(
-                self.get_instruction_operand_data(accepted_operand_types.0, operand1)?,
-                self.get_instruction_operand_data(accepted_operand_types.1, operand2)?,
+                self.get_instruction_operand(accepted_operand_types.0, operand1)?,
+                self.get_instruction_operand(accepted_operand_types.1, operand2)?,
             )
         })
     }
@@ -120,6 +120,34 @@ impl ProgramExecutor {
             ..
         } = &INSTRUCTION_SET[instruction_code as usize];
         executor(self, *accepted_operands)
+    }
+
+    pub fn read_from(&mut self, place_to_read_from: InstructionOperand) -> RuntimeResult<u16> {
+        Ok(match place_to_read_from {
+            InstructionOperand::Reg(reg) => self.registers[reg as usize],
+            InstructionOperand::Addr(reg) => self.read_u16(self.registers[reg as usize])?,
+            InstructionOperand::AddrInc(reg) => {
+                let num = self.read_u16(self.registers[reg as usize])?;
+                self.registers[reg as usize] = self.registers[reg as usize].wrapping_add(2);
+                num
+            }
+            InstructionOperand::Number(num) => num,
+            InstructionOperand::Port(port) => self.display[port as usize],
+        })
+    }
+
+    pub fn write_to(&mut self, place_to_write_to: InstructionOperand, num: u16) -> RuntimeResult<()> {
+        match place_to_write_to {
+            InstructionOperand::Reg(reg) => self.registers[reg as usize] = num,
+            InstructionOperand::Addr(reg) => self.write_u16(self.registers[reg as usize], num)?,
+            InstructionOperand::AddrInc(reg) => {
+                self.write_u16(self.registers[reg as usize], num)?;
+                self.registers[reg as usize] = self.registers[reg as usize].wrapping_add(2);
+            }
+            InstructionOperand::Port(port) => self.display[port as usize] = num,
+            InstructionOperand::Number(_) => panic!("Cannot write to a number"),
+        }
+        Ok(())
     }
 
     pub fn add_to_pc(&mut self, n: usize) {

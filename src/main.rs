@@ -52,10 +52,10 @@ impl Default for MyApp {
     fn default() -> Self {
         Self {
             code: "\
-mov r0, (r1)+
-mov (r0), @a
-mov r0, 1
-mov r0, @a
+mov r0, -10
+mov r1, 15
+add r0, r1
+add r1, r0
 stop
 a:"
             .into(),

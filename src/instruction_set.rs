@@ -88,6 +88,63 @@ impl InstructionOperands {
             InstructionOperands::Two(_, _) => 2,
         }
     }
+
+    pub fn instruction_size(&self) -> usize {
+        match self {
+            InstructionOperands::Zero => 2,
+            InstructionOperands::One(op1) => {
+                if let InstructionOperand::Number(_) = op1 {
+                    4
+                } else {
+                    2
+                }
+            }
+            InstructionOperands::Two(op1, op2) => {
+                if let InstructionOperand::Number(_) = op1 {
+                    4
+                } else if let InstructionOperand::Number(_) = op2 {
+                    4
+                } else {
+                    2
+                }
+            }
+        }
+    }
+
+    pub fn zero(&self) -> usize {
+        match self {
+            InstructionOperands::Zero => 2,
+            _ => panic!("Expected 0 operands, found {}", self.count()),
+        }
+    }
+
+    pub fn one(&self) -> (InstructionOperand, usize) {
+        match self {
+            &InstructionOperands::One(op) => (
+                op,
+                match op {
+                    InstructionOperand::Number(_) => 4,
+                    _ => 2,
+                },
+            ),
+            _ => panic!("Expected 1 operand, found {}", self.count()),
+        }
+    }
+
+    pub fn two(&self) -> (InstructionOperand, InstructionOperand, usize) {
+        match self {
+            &InstructionOperands::Two(op1, op2) => (
+                op1,
+                op2,
+                match (op1, op2) {
+                    (InstructionOperand::Number(_), _) => 4,
+                    (_, InstructionOperand::Number(_)) => 4,
+                    _ => 2,
+                },
+            ),
+            _ => panic!("Expected 2 operands, found {}", self.count()),
+        }
+    }
 }
 
 // Executes a binary instruction
@@ -103,12 +160,9 @@ pub const INSTRUCTION_SET: [InstructionInfo; 4] = [
     InstructionInfo {
         name: "nop",
         accepted_operands: AcceptedOperandTypes(0, 0),
-        executor: |executor, accepted_operand_types| {
-            match executor.get_current_instruction_operand_types(accepted_operand_types)? {
-                InstructionOperands::Zero => {}
-                _ => unreachable!(),
-            }
-            executor.add_to_pc(2);
+        executor: |executor, accepted_operands| {
+            let size = executor.get_instruction_operands(accepted_operands)?.zero();
+            executor.add_to_pc(size);
             Ok(())
         },
     },
@@ -119,42 +173,10 @@ pub const INSTRUCTION_SET: [InstructionInfo; 4] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
         executor: |executor, accepted_operands| {
-            let InstructionOperands::Two(op1, op2) =
-                executor.get_current_instruction_operand_types(accepted_operands)?
-            else {
-                unreachable!();
-            };
-            // Getting the moved value
-            let num = match op2 {
-                InstructionOperand::Reg(reg) => executor.registers[reg as usize],
-                InstructionOperand::Addr(reg) => {
-                    executor.read_u16(executor.registers[reg as usize])?
-                }
-                InstructionOperand::AddrInc(reg) => {
-                    let num = executor.read_u16(executor.registers[reg as usize])?;
-                    executor.registers[reg as usize] =
-                        executor.registers[reg as usize].wrapping_add(2);
-                    num
-                }
-                InstructionOperand::Number(num) => {
-                    executor.add_to_pc(2);
-                    num
-                }
-                _ => unreachable!(),
-            };
-            match op1 {
-                InstructionOperand::Reg(reg) => executor.registers[reg as usize] = num,
-                InstructionOperand::Addr(reg) => {
-                    executor.write_u16(executor.registers[reg as usize], num)?
-                }
-                InstructionOperand::AddrInc(reg) => {
-                    executor.write_u16(executor.registers[reg as usize], num)?;
-                    executor.registers[reg as usize] =
-                        executor.registers[reg as usize].wrapping_add(2);
-                }
-                _ => unreachable!(),
-            }
-            executor.add_to_pc(2);
+            let (op1, op2, size) = executor.get_instruction_operands(accepted_operands)?.two();
+            let num = executor.read_from(op2)?;
+            executor.write_to(op1, num)?;
+            executor.add_to_pc(size);
             Ok(())
         },
     },
@@ -165,62 +187,20 @@ pub const INSTRUCTION_SET: [InstructionInfo; 4] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
         executor: |executor, accepted_operands| {
-            let InstructionOperands::Two(op1, op2) =
-                executor.get_current_instruction_operand_types(accepted_operands)?
-            else {
-                unreachable!();
-            };
-            // Getting the moved value
-            let num2 = match op2 {
-                InstructionOperand::Reg(reg) => executor.registers[reg as usize],
-                InstructionOperand::Addr(reg) => {
-                    executor.read_u16(executor.registers[reg as usize])?
-                }
-                InstructionOperand::AddrInc(reg) => {
-                    let num = executor.read_u16(executor.registers[reg as usize])?;
-                    executor.registers[reg as usize] =
-                        executor.registers[reg as usize].wrapping_add(2);
-                    num
-                }
-                InstructionOperand::Number(num) => {
-                    executor.add_to_pc(2);
-                    num
-                }
-                _ => unreachable!(),
-            };
-            // Getting the moved value
-            let num1 = match op1 {
-                InstructionOperand::Reg(reg) => executor.registers[reg as usize],
-                InstructionOperand::Addr(reg) | InstructionOperand::AddrInc(reg) => {
-                    executor.read_u16(executor.registers[reg as usize])?
-                }
-                _ => unreachable!(),
-            };
+            let (op1, op2, size) = executor.get_instruction_operands(accepted_operands)?.two();
+            let num1 = executor.read_from(op1)?;
+            let num2 = executor.read_from(op2)?;
             let res = num1.wrapping_add(num2);
-            match op1 {
-                InstructionOperand::Reg(reg) => executor.registers[reg as usize] = res,
-                InstructionOperand::Addr(reg) => {
-                    executor.write_u16(executor.registers[reg as usize], res)?
-                }
-                InstructionOperand::AddrInc(reg) => {
-                    executor.write_u16(executor.registers[reg as usize], res)?;
-                    executor.registers[reg as usize] =
-                        executor.registers[reg as usize].wrapping_add(2);
-                }
-                _ => unreachable!(),
-            }
-            executor.add_to_pc(2);
+            executor.write_to(op1, res)?;
+            executor.add_to_pc(size);
             Ok(())
         },
     },
     InstructionInfo {
         name: "stop",
         accepted_operands: AcceptedOperandTypes(0, 0),
-        executor: |executor, accepted_operand_types| {
-            match executor.get_current_instruction_operand_types(accepted_operand_types)? {
-                InstructionOperands::Zero => {}
-                _ => unreachable!(),
-            }
+        executor: |executor, accepted_operands| {
+            executor.get_instruction_operands(accepted_operands)?.zero();
             executor.has_finished = true;
             Ok(())
         },
