@@ -8,13 +8,17 @@ pub mod instruction_set;
 
 use crate::compiler::{CompilationError, Compiler, ErrorsHighlightInfo, MAX_PROGRAM_SIZE};
 use crate::executor::{ProgramExecutor, RuntimeError};
-use crate::highlighting::{highlight, CodeTheme};
+use crate::highlighting::{highlight, CodeTheme, TokenType};
 use eframe::egui;
 use eframe::egui::{
-    include_image, vec2, Align2, Color32, FontId, RichText, TextFormat, Vec2, Visuals, Widget,
+    include_image, vec2, Align2, Color32, RichText, Vec2, Visuals, Widget,
 };
 use eframe::epaint::text::LayoutJob;
 use std::ops::Range;
+
+// fn main() {
+//     dbg!((-6) >> 1);
+// }
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
@@ -304,19 +308,12 @@ impl MyApp {
         }
     }
 
-    fn get_binary_viewer_rows(&self, rows_range: Range<usize>) -> LayoutJob {
+    fn get_binary_viewer_rows(&self, rows_range: Range<usize>, theme: &CodeTheme) -> LayoutJob {
         let mut layout_job = LayoutJob::default();
         layout_job.text.reserve(rows_range.len() * 8);
         let range = (rows_range.start * 8)..(rows_range.end * 8).min(MAX_PROGRAM_SIZE);
-        let text_format = TextFormat {
-            font_id: FontId::monospace(14.0),
-            ..Default::default()
-        };
-        let highlighted_format = TextFormat {
-            font_id: FontId::monospace(14.0),
-            color: Color32::LIGHT_BLUE,
-            ..Default::default()
-        };
+        let text_format = theme.formats[TokenType::Punctuation].clone();
+        let highlighted_format = theme.formats[TokenType::Label].clone();
         for i in range.clone() {
             if (i & 0b111) == 0 {
                 if i != range.start {
@@ -343,7 +340,7 @@ impl MyApp {
         layout_job
     }
 
-    fn binary_viewer_ui(&self, ui: &mut egui::Ui) {
+    fn binary_viewer_ui(&self, ui: &mut egui::Ui, theme: &CodeTheme) {
         ui.push_id("Binary code viewer", |ui| {
             let text_style = egui::TextStyle::Body;
             let row_height = ui.text_style_height(&text_style);
@@ -351,7 +348,7 @@ impl MyApp {
                 .min_scrolled_height(ui.available_height())
                 .show_rows(ui, row_height, MAX_PROGRAM_SIZE / 8, |ui, rows_range| {
                     let mut layout_job =
-                        self.get_binary_viewer_rows(rows_range.start..(rows_range.end + 5));
+                        self.get_binary_viewer_rows(rows_range.start..(rows_range.end + 5), theme);
                     ui.add(
                         egui::TextEdit::multiline(&mut layout_job.clone().text.as_str())
                             .layouter(&mut |ui: &egui::Ui, _: &str, wrap_width: f32| {
@@ -400,7 +397,7 @@ impl eframe::App for MyApp {
             theme.clone().store_in_memory(ui.ctx());
             ui.horizontal_top(|ui| {
                 self.code_editor_ui(ui, &theme, &self.compiler.errors.clone());
-                self.binary_viewer_ui(ui);
+                self.binary_viewer_ui(ui, &theme);
             });
         });
         if !self.program_executor.has_finished && !self.program_executor.is_in_debug_mode {

@@ -38,7 +38,7 @@ pub fn highlight(
 }
 
 #[derive(Clone, Copy, PartialEq, Enum)]
-enum TokenType {
+pub enum TokenType {
     Comment,
     Keyword,
     Literal,
@@ -53,7 +53,7 @@ enum TokenType {
 #[derive(Clone, Hash, PartialEq)]
 pub struct CodeTheme {
     dark_mode: bool,
-    formats: enum_map::EnumMap<TokenType, TextFormat>,
+    pub formats: enum_map::EnumMap<TokenType, TextFormat>,
     bg_color: Color32,
     compiled_program: [u8; 0x100],
 }
