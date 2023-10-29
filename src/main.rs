@@ -10,9 +10,7 @@ use crate::compiler::{CompilationError, Compiler, ErrorsHighlightInfo, MAX_PROGR
 use crate::executor::{ProgramExecutor, RuntimeError};
 use crate::highlighting::{highlight, CodeTheme, TokenType};
 use eframe::egui;
-use eframe::egui::{
-    include_image, vec2, Align2, Color32, RichText, Vec2, Visuals, Widget,
-};
+use eframe::egui::{include_image, vec2, Align2, Color32, RichText, Vec2, Visuals, Widget};
 use eframe::epaint::text::LayoutJob;
 use std::ops::Range;
 
@@ -52,12 +50,12 @@ impl Default for MyApp {
     fn default() -> Self {
         Self {
             code: "\
-mov r0, -10
-mov r1, 15
-add r0, r1
-add r1, r0
+mov r0, -1
+a:
+add r0, 1
+jmp @a
 stop
-a:"
+"
             .into(),
             compiler: Compiler::build(),
             program_executor: ProgramExecutor::new(),
@@ -184,9 +182,6 @@ impl MyApp {
     }
 
     fn execute_next_instruction(&mut self) {
-        if self.are_there_compilation_errors() {
-            return;
-        }
         self.error_popup_info = ErrorPopupInfo::None;
         match self.program_executor.execute_next_instruction() {
             Err(err) => {
@@ -204,6 +199,45 @@ impl MyApp {
             return true;
         }
         false
+    }
+
+    fn build_run_debug_buttons(&mut self, ui: &mut egui::Ui) {
+        if ui.button("Build").clicked() {
+            self.program_executor.is_in_debug_mode = false;
+            self.program_executor.has_finished = true;
+            if !self.are_there_compilation_errors() {
+                self.program_executor.memory = self.compiler.program.clone();
+            }
+        }
+        if ui.button("Run").clicked() {
+            self.program_executor.is_in_debug_mode = false;
+            self.program_executor.prepare_for_a_new_run();
+            if !self.are_there_compilation_errors() {
+                self.program_executor.memory = self.compiler.program.clone();
+            }
+            self.execute_next_instruction();
+        }
+        if ui.button("Step over").clicked() {
+            if (self.program_executor.has_finished || !self.program_executor.is_in_debug_mode)
+                && !self.are_there_compilation_errors()
+            {
+                self.program_executor.is_in_debug_mode = true;
+                self.program_executor.prepare_for_a_new_run();
+                if !self.are_there_compilation_errors() {
+                    self.program_executor.memory = self.compiler.program.clone();
+                }
+            } else {
+                self.execute_next_instruction();
+            }
+        }
+        if ui.button("Clear registers").clicked() {
+            for i in 0..4 {
+                self.program_executor.registers[i] = 0;
+            }
+        }
+        if !self.program_executor.has_finished && !self.program_executor.is_in_debug_mode {
+            self.execute_next_instruction();
+        }
     }
 
     fn settings_and_info_panel_ui(&mut self, ui: &mut egui::Ui, errors: &ErrorsHighlightInfo) {
@@ -228,40 +262,7 @@ impl MyApp {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Registers").strong().size(14.0));
             ui.separator();
-            if ui.button("Build").clicked() {
-                self.program_executor.is_in_debug_mode = false;
-                self.program_executor.has_finished = true;
-                if !self.are_there_compilation_errors() {
-                    self.program_executor.memory = self.compiler.program.clone();
-                }
-            }
-            if ui.button("Run").clicked() {
-                self.program_executor.is_in_debug_mode = false;
-                self.program_executor.prepare_for_a_new_run();
-                if !self.are_there_compilation_errors() {
-                    self.program_executor.memory = self.compiler.program.clone();
-                }
-                self.execute_next_instruction();
-            }
-            if ui.button("Step over").clicked() {
-                if self.program_executor.has_finished && !self.are_there_compilation_errors() {
-                    self.program_executor.is_in_debug_mode = true;
-                    self.program_executor.prepare_for_a_new_run();
-                    if !self.are_there_compilation_errors() {
-                        self.program_executor.memory = self.compiler.program.clone();
-                    }
-                } else {
-                    self.execute_next_instruction();
-                }
-            }
-            if ui.button("Clear registers").clicked() {
-                for i in 0..4 {
-                    self.program_executor.registers[i] = 0;
-                }
-            }
-            if !self.program_executor.has_finished && !self.program_executor.is_in_debug_mode {
-                self.execute_next_instruction();
-            }
+            self.build_run_debug_buttons(ui);
         });
         ui.end_row();
         egui::Grid::new("Settings and info")
@@ -342,11 +343,9 @@ impl MyApp {
 
     fn binary_viewer_ui(&self, ui: &mut egui::Ui, theme: &CodeTheme) {
         ui.push_id("Binary code viewer", |ui| {
-            let text_style = egui::TextStyle::Body;
-            let row_height = ui.text_style_height(&text_style);
             egui::ScrollArea::vertical()
                 .min_scrolled_height(ui.available_height())
-                .show_rows(ui, row_height, MAX_PROGRAM_SIZE / 8, |ui, rows_range| {
+                .show_rows(ui, 8.0, MAX_PROGRAM_SIZE / 8, |ui, rows_range| {
                     let mut layout_job =
                         self.get_binary_viewer_rows(rows_range.start..(rows_range.end + 5), theme);
                     ui.add(

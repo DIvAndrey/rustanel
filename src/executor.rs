@@ -12,6 +12,7 @@ pub struct ProgramExecutor {
     pub display: [u16; 16],
     pub has_finished: bool,
     pub is_in_debug_mode: bool,
+    // pub
     pub curr_addr: usize,
 }
 
@@ -91,7 +92,7 @@ impl ProgramExecutor {
         &self,
         accepted_operand_types: AcceptedOperandTypes,
     ) -> RuntimeResult<InstructionOperands> {
-        assert!(accepted_operand_types.0 == 0 || accepted_operand_types.1 != 0);
+        assert!(!(accepted_operand_types.0 == 0 && accepted_operand_types.1 != 0));
         let operands_byte = self.memory[self.curr_addr + 1];
         let operand1 = (operands_byte >> 4) & 0xF;
         let operand2 = operands_byte & 0xF;

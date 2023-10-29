@@ -1,4 +1,5 @@
-use crate::executor::{ProgramExecutor, RuntimeResult};
+use crate::compiler::MAX_PROGRAM_SIZE;
+use crate::executor::{ProgramExecutor, RuntimeError, RuntimeResult};
 
 pub const NUMBER_OPERAND_CODE: u8 = 0xF;
 pub const REG_MASK: u8 = 0b00001;
@@ -156,7 +157,7 @@ pub struct InstructionInfo {
     pub executor: InstructionExecutor,
 }
 
-pub const INSTRUCTION_SET: [InstructionInfo; 4] = [
+pub const INSTRUCTION_SET: [InstructionInfo; 8] = [
     InstructionInfo {
         name: "nop",
         accepted_operands: AcceptedOperandTypes(0, 0),
@@ -193,6 +194,70 @@ pub const INSTRUCTION_SET: [InstructionInfo; 4] = [
             let res = num1.wrapping_add(num2);
             executor.write_to(op1, res)?;
             executor.add_to_pc(size);
+            Ok(())
+        },
+    },
+    InstructionInfo {
+        name: "sub",
+        accepted_operands: AcceptedOperandTypes(
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK,
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
+        ),
+        executor: |executor, accepted_operands| {
+            let (op1, op2, size) = executor.get_instruction_operands(accepted_operands)?.two();
+            let num1 = executor.read_from(op1)?;
+            let num2 = executor.read_from(op2)?;
+            let res = num1.wrapping_sub(num2);
+            executor.write_to(op1, res)?;
+            executor.add_to_pc(size);
+            Ok(())
+        },
+    },
+    InstructionInfo {
+        name: "mul",
+        accepted_operands: AcceptedOperandTypes(
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK,
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
+        ),
+        executor: |executor, accepted_operands| {
+            let (op1, op2, size) = executor.get_instruction_operands(accepted_operands)?.two();
+            let num1 = executor.read_from(op1)?;
+            let num2 = executor.read_from(op2)?;
+            let res = num1.wrapping_mul(num2);
+            executor.write_to(op1, res)?;
+            executor.add_to_pc(size);
+            Ok(())
+        },
+    },
+    InstructionInfo {
+        name: "div",
+        accepted_operands: AcceptedOperandTypes(
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK,
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
+        ),
+        executor: |executor, accepted_operands| {
+            let (op1, op2, size) = executor.get_instruction_operands(accepted_operands)?.two();
+            let num1 = executor.read_from(op1)?;
+            let num2 = executor.read_from(op2)?;
+            let res = num1.wrapping_div(num2);
+            executor.write_to(op1, res)?;
+            executor.add_to_pc(size);
+            Ok(())
+        },
+    },
+    InstructionInfo {
+        name: "jmp",
+        accepted_operands: AcceptedOperandTypes(
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
+            0,
+        ),
+        executor: |executor, accepted_operands| {
+            let (op, _) = executor.get_instruction_operands(accepted_operands)?.one();
+            let addr = executor.read_from(op)? as usize;
+            if addr >= MAX_PROGRAM_SIZE {
+                return Err(RuntimeError::InvalidAddress(executor.curr_addr, addr));
+            }
+            executor.curr_addr = addr;
             Ok(())
         },
     },
