@@ -13,7 +13,6 @@ use eframe::egui;
 use eframe::egui::{include_image, vec2, Align2, Color32, RichText, Vec2, Visuals, Widget};
 use eframe::epaint::text::LayoutJob;
 use std::ops::Range;
-use lazy_regex::{regex_captures, regex_is_match};
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {

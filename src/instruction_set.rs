@@ -154,7 +154,7 @@ impl InstructionOperands {
 }
 
 // Executes a binary instruction
-pub type InstructionExecutor = fn(&mut ProgramExecutor, AcceptedOperandTypes) -> RuntimeResult<()>;
+pub type InstructionExecutor = fn(&mut ProgramExecutor, InstructionOperands) -> RuntimeResult<()>;
 
 pub struct InstructionInfo {
     pub name: &'static str,
@@ -162,12 +162,36 @@ pub struct InstructionInfo {
     pub executor: InstructionExecutor,
 }
 
-pub const INSTRUCTION_SET: [InstructionInfo; 10] = [
+macro_rules! one_operand_instruction {
+    ($f:expr) => {
+        |executor: &mut ProgramExecutor, operands: InstructionOperands| {
+            let (op1, size) = operands.one();
+            let res = ($f)(executor.read_from(op1)?);
+            executor.write_to(op1, res)?;
+            executor.add_to_pc(size);
+            Ok(())
+        }
+    };
+}
+
+macro_rules! two_operands_instruction {
+    ($f:expr) => {
+        |executor: &mut ProgramExecutor, operands: InstructionOperands| {
+            let (op1, op2, size) = operands.two();
+            let res = ($f)(executor.read_from(op1)?, executor.read_from(op2)?);
+            executor.write_to(op1, res)?;
+            executor.add_to_pc(size);
+            Ok(())
+        }
+    };
+}
+
+pub const INSTRUCTION_SET: [InstructionInfo; 14] = [
     InstructionInfo {
         name: "nop",
         accepted_operands: AcceptedOperandTypes(0, 0),
-        executor: |executor, accepted_operands| {
-            let size = executor.get_instruction_operands(accepted_operands)?.zero();
+        executor: |executor, operands| {
+            let size = operands.zero();
             executor.add_to_pc(size);
             Ok(())
         },
@@ -178,13 +202,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 10] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: |executor, accepted_operands| {
-            let (op1, op2, size) = executor.get_instruction_operands(accepted_operands)?.two();
-            let num = executor.read_from(op2)?;
-            executor.write_to(op1, num)?;
-            executor.add_to_pc(size);
-            Ok(())
-        },
+        executor: two_operands_instruction!(|_a, b| b),
     },
     InstructionInfo {
         name: "add",
@@ -192,15 +210,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 10] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: |executor, accepted_operands| {
-            let (op1, op2, size) = executor.get_instruction_operands(accepted_operands)?.two();
-            let num1 = executor.read_from(op1)?;
-            let num2 = executor.read_from(op2)?;
-            let res = num1.wrapping_add(num2);
-            executor.write_to(op1, res)?;
-            executor.add_to_pc(size);
-            Ok(())
-        },
+        executor: two_operands_instruction!(u16::wrapping_add),
     },
     InstructionInfo {
         name: "sub",
@@ -208,15 +218,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 10] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: |executor, accepted_operands| {
-            let (op1, op2, size) = executor.get_instruction_operands(accepted_operands)?.two();
-            let num1 = executor.read_from(op1)?;
-            let num2 = executor.read_from(op2)?;
-            let res = num1.wrapping_sub(num2);
-            executor.write_to(op1, res)?;
-            executor.add_to_pc(size);
-            Ok(())
-        },
+        executor: two_operands_instruction!(u16::wrapping_sub),
     },
     InstructionInfo {
         name: "mul",
@@ -224,15 +226,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 10] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: |executor, accepted_operands| {
-            let (op1, op2, size) = executor.get_instruction_operands(accepted_operands)?.two();
-            let num1 = executor.read_from(op1)?;
-            let num2 = executor.read_from(op2)?;
-            let res = num1.wrapping_mul(num2);
-            executor.write_to(op1, res)?;
-            executor.add_to_pc(size);
-            Ok(())
-        },
+        executor: two_operands_instruction!(u16::wrapping_mul),
     },
     InstructionInfo {
         name: "div",
@@ -240,15 +234,39 @@ pub const INSTRUCTION_SET: [InstructionInfo; 10] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: |executor, accepted_operands| {
-            let (op1, op2, size) = executor.get_instruction_operands(accepted_operands)?.two();
-            let num1 = executor.read_from(op1)?;
-            let num2 = executor.read_from(op2)?;
-            let res = num1.wrapping_div(num2);
-            executor.write_to(op1, res)?;
-            executor.add_to_pc(size);
-            Ok(())
-        },
+        executor: two_operands_instruction!(u16::wrapping_div),
+    },
+    InstructionInfo {
+        name: "and",
+        accepted_operands: AcceptedOperandTypes(
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK,
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
+        ),
+        executor: two_operands_instruction!(|a, b| a & b),
+    },
+    InstructionInfo {
+        name: "or",
+        accepted_operands: AcceptedOperandTypes(
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK,
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
+        ),
+        executor: two_operands_instruction!(|a, b| a | b),
+    },
+    InstructionInfo {
+        name: "xor",
+        accepted_operands: AcceptedOperandTypes(
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK,
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
+        ),
+        executor: two_operands_instruction!(|a, b| a ^ b),
+    },
+    InstructionInfo {
+        name: "not",
+        accepted_operands: AcceptedOperandTypes(
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK,
+            0,
+        ),
+        executor: one_operand_instruction!(|a: u16| !a),
     },
     InstructionInfo {
         name: "jmp",
@@ -256,8 +274,8 @@ pub const INSTRUCTION_SET: [InstructionInfo; 10] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
             0,
         ),
-        executor: |executor, accepted_operands| {
-            let (op, _) = executor.get_instruction_operands(accepted_operands)?.one();
+        executor: |executor, operands| {
+            let (op, _) = operands.one();
             let addr = executor.read_from(op)? as usize;
             if addr >= MAX_PROGRAM_SIZE {
                 return Err(RuntimeError::InvalidAddress(executor.curr_addr, addr));
@@ -272,8 +290,8 @@ pub const INSTRUCTION_SET: [InstructionInfo; 10] = [
             PORT_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: |executor, accepted_operands| {
-            let (port, data, size) = executor.get_instruction_operands(accepted_operands)?.two();
+        executor: |executor, operands| {
+            let (port, data, size) = operands.two();
             let data = executor.read_from(data)?;
             executor.write_to(port, data)?;
             executor.add_to_pc(size);
@@ -286,8 +304,8 @@ pub const INSTRUCTION_SET: [InstructionInfo; 10] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             PORT_MASK,
         ),
-        executor: |executor, accepted_operands| {
-            let (place, data, size) = executor.get_instruction_operands(accepted_operands)?.two();
+        executor: |executor, operands| {
+            let (place, data, size) = operands.two();
             let data = executor.read_from(data)?;
             executor.write_to(place, data)?;
             executor.add_to_pc(size);
@@ -297,8 +315,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 10] = [
     InstructionInfo {
         name: "stop",
         accepted_operands: AcceptedOperandTypes(0, 0),
-        executor: |executor, accepted_operands| {
-            executor.get_instruction_operands(accepted_operands)?.zero();
+        executor: |executor, _operands| {
             executor.has_finished = true;
             Ok(())
         },

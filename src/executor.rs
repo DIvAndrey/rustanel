@@ -120,7 +120,7 @@ impl ProgramExecutor {
             executor,
             ..
         } = &INSTRUCTION_SET[instruction_code as usize];
-        executor(self, *accepted_operands)
+        executor(self, self.get_instruction_operands(*accepted_operands)?)
     }
 
     pub fn read_from(&mut self, place_to_read_from: InstructionOperand) -> RuntimeResult<u16> {
