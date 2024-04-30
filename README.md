@@ -1,4 +1,4 @@
 # rustanel
-A pure Rust remake of K. Polyakov's lampanel - 16-bit assembly visualizer for education purposes
+A pure Rust remake of K. Polyakov's lampanel - 16-bit assembly visualizer for educational purposes
 
-**NOTE:** This is a very early project, and it may not even compile now. So it's recommended for everyone to wait until it's ready to use.
+**NOTE:** The project is still in development and it misses a lot of features.
