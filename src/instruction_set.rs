@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use crate::compiler::MAX_PROGRAM_SIZE;
 use crate::executor::{ProgramExecutor, RuntimeError, RuntimeResult};
 
@@ -40,6 +41,9 @@ pub fn get_expected_operand_types_string(mask: u8) -> String {
     if expected.is_empty() {
         return "nothing".into();
     }
+    if expected.len() == 1 {
+        return expected[0].into();
+    }
     let mut res = String::new();
     for i in 0..(expected.len() - 1) {
         res += expected[i];
@@ -61,16 +65,17 @@ pub enum InstructionOperand {
     Number(u16),
 }
 
-impl ToString for InstructionOperand {
-    fn to_string(&self) -> String {
-        match self {
-            InstructionOperand::Reg(4) => format!("SP"),
+impl Display for InstructionOperand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            InstructionOperand::Reg(4) => "SP".to_string(),
             InstructionOperand::Reg(r) => format!("R{r}"),
             InstructionOperand::Addr(r) => format!("(R{r})"),
-            InstructionOperand::AddrInc(r) => format!("R({r})+"),
+            InstructionOperand::AddrInc(r) => format!("(R{r})+"),
             InstructionOperand::Port(p) => format!("P{p}"),
-            InstructionOperand::Number(_) => format!("number"),
-        }
+            InstructionOperand::Number(_) => "number".to_string(),
+        };
+        write!(f, "{}", str)
     }
 }
 
@@ -157,7 +162,7 @@ pub struct InstructionInfo {
     pub executor: InstructionExecutor,
 }
 
-pub const INSTRUCTION_SET: [InstructionInfo; 8] = [
+pub const INSTRUCTION_SET: [InstructionInfo; 10] = [
     InstructionInfo {
         name: "nop",
         accepted_operands: AcceptedOperandTypes(0, 0),
@@ -258,6 +263,34 @@ pub const INSTRUCTION_SET: [InstructionInfo; 8] = [
                 return Err(RuntimeError::InvalidAddress(executor.curr_addr, addr));
             }
             executor.curr_addr = addr;
+            Ok(())
+        },
+    },
+    InstructionInfo {
+        name: "wrt",
+        accepted_operands: AcceptedOperandTypes(
+            PORT_MASK,
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
+        ),
+        executor: |executor, accepted_operands| {
+            let (port, data, size) = executor.get_instruction_operands(accepted_operands)?.two();
+            let data = executor.read_from(data)?;
+            executor.write_to(port, data)?;
+            executor.add_to_pc(size);
+            Ok(())
+        },
+    },
+    InstructionInfo {
+        name: "read",
+        accepted_operands: AcceptedOperandTypes(
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK,
+            PORT_MASK,
+        ),
+        executor: |executor, accepted_operands| {
+            let (place, data, size) = executor.get_instruction_operands(accepted_operands)?.two();
+            let data = executor.read_from(data)?;
+            executor.write_to(place, data)?;
+            executor.add_to_pc(size);
             Ok(())
         },
     },

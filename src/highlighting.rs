@@ -296,7 +296,6 @@ impl Highlighter {
                 i += c.len_utf8();
             }
         }
-        dbg!(&errors);
         let mut job = LayoutJob::default();
         for (i, data) in job_data.iter().enumerate() {
             job.append(

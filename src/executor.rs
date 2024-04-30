@@ -170,13 +170,13 @@ impl Display for RuntimeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             RuntimeError::InvalidInstruction(line, instruction) => {
-                write!(f, "0x{line:x}: Invalid operand: `{instruction:x}`")
+                write!(f, "0x{}: Invalid operand: `{instruction:x}`", line + 1)
             }
             RuntimeError::InvalidOperand(line, operand) => {
-                write!(f, "0x{line:x}: Invalid operand: `{operand:x}`")
+                write!(f, "0x{}: Invalid operand: `{operand:x}`", line + 1)
             }
             RuntimeError::InvalidAddress(line, address) => {
-                write!(f, "0x{line:x}: Invalid address: `{address:x}`")
+                write!(f, "0x{}: Invalid address: `{address:x}`", line + 1)
             }
         }
     }

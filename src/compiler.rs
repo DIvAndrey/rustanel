@@ -49,7 +49,7 @@ pub enum CompilationError {
     OutOfMemory {
         line: usize,
     },
-    LabelNameAlreadyUsed {
+    LabelAlreadyExists {
         line: usize,
         name: String,
     },
@@ -65,13 +65,13 @@ impl Display for CompilationError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CompilationError::UnknownInstruction { line, instruction } => {
-                write!(f, "line {line}: Unknown instruction: `{instruction}`")
+                write!(f, "line {}: Unknown instruction: `{instruction}`", line + 1)
             }
             CompilationError::NoLabelWithSuchName { line, name } => {
-                write!(f, "line {line}: No label with such name: `{name}`")
+                write!(f, "line {}: No label with such name: `{name}`", line + 1)
             }
             CompilationError::InvalidOperand { line, operand } => {
-                write!(f, "line {line}: Invalid operand: `{operand}`")
+                write!(f, "line {}: Invalid operand: `{operand}`", line + 1)
             }
             CompilationError::WrongNumberOfOperands {
                 line,
@@ -79,7 +79,8 @@ impl Display for CompilationError {
                 found,
             } => write!(
                 f,
-                "line {line}: Wrong number of operands: expected {expected}, found {found}"
+                "line {}: Wrong number of operands: expected {expected}, found {found}",
+                line + 1,
             ),
             CompilationError::WrongOperandType {
                 line,
@@ -87,19 +88,21 @@ impl Display for CompilationError {
                 found,
             } => write!(
                 f,
-                "line {line}: Wrong operand type: expected: {expected}, found {found}"
+                "line {}: Wrong operand type: expected {expected}, found {found}",
+                line + 1
             ),
             CompilationError::OutOfMemory { line } => {
-                write!(f, "line {line}: Program doesn't fit in memory")
+                write!(f, "line {}: Program doesn't fit in memory", line + 1)
             }
-            CompilationError::LabelNameAlreadyUsed { line, name } => {
+            CompilationError::LabelAlreadyExists { line, name } => {
                 write!(
                     f,
-                    "line {line}: A label with such name already exists: `{name}`"
+                    "line {}: A label with such name already exists: `{name}`",
+                    line + 1
                 )
             }
             CompilationError::InvalidLabelName { line, name } => {
-                write!(f, "line {line}: `{name}` is not a correct label name")
+                write!(f, "line {}: `{name}` is not a correct label name", line + 1)
             }
         }
     }
@@ -153,7 +156,7 @@ impl Compiler {
         Ok((operand_byte, number))
     }
 
-    fn conv_operands_to_binary(
+    fn convert_operands_to_binary(
         &self,
         operands: InstructionOperands,
         accepted: AcceptedOperandTypes,
@@ -203,10 +206,10 @@ impl Compiler {
 
     fn str_reg_to_num(r: &str) -> u8 {
         match r {
-            "0" => 0,
-            "1" => 1,
-            "2" => 2,
-            "3" => 3,
+            "r0" => 0,
+            "r1" => 1,
+            "r2" => 2,
+            "r3" => 3,
             "sp" => 4,
             _ => unreachable!(),
         }
@@ -215,20 +218,20 @@ impl Compiler {
     fn parse_operand(&mut self, string: &str) -> CompilationResult<InstructionOperand> {
         let string = string.trim();
         // Register
-        if let Some((_, r)) = regex_captures!(r"^r([0-3]|sp)$", string) {
+        if let Some((_, r)) = regex_captures!(r"^(r0|r1|r2|r3|sp)$", string) {
             return Ok(InstructionOperand::Reg(Self::str_reg_to_num(r)));
         }
         // Address in register
-        if let Some((_, r)) = regex_captures!(r"^\(r([0-3]|sp)\)$", string) {
+        if let Some((_, r)) = regex_captures!(r"^\((r0|r1|r2|r3|sp)\)\)$", string) {
             return Ok(InstructionOperand::Addr(Self::str_reg_to_num(r)));
         }
         // Address in register with increment
-        if let Some((_, r)) = regex_captures!(r"^\(r([0-3]|sp)\)\+$", string) {
+        if let Some((_, r)) = regex_captures!(r"^\((r0|r1|r2|r3|sp)\)\+$", string) {
             return Ok(InstructionOperand::AddrInc(Self::str_reg_to_num(r)));
         }
         // Port
         if let Some((_, r)) = regex_captures!(r"^p([0-9]|1[0-5])$", string) {
-            return Ok(InstructionOperand::AddrInc(r.parse::<u8>().unwrap()));
+            return Ok(InstructionOperand::Port(r.parse::<u8>().unwrap()));
         }
         // Number
         if let Some(num) = wrapping_parse(string) {
@@ -285,7 +288,7 @@ impl Compiler {
             &[a, b] => InstructionOperands::Two(self.parse_operand(a)?, self.parse_operand(b)?),
             _ => unreachable!(),
         };
-        let (operands, number) = self.conv_operands_to_binary(operands, info.accepted_operands)?;
+        let (operands, number) = self.convert_operands_to_binary(operands, info.accepted_operands)?;
         Ok(Some((((code as u16) << 8) | operands as u16, number)))
     }
 
@@ -311,7 +314,7 @@ impl Compiler {
                     if label_names.contains(label_name) {
                         errors.push((
                             curr_symbol..(curr_symbol + raw_line_len),
-                            CompilationError::LabelNameAlreadyUsed {
+                            CompilationError::LabelAlreadyExists {
                                 line: i,
                                 name: label_name.to_string(),
                             },
@@ -345,16 +348,9 @@ impl Compiler {
             if line.ends_with(':') {
                 // Label
                 let label_name = &line[..(line.len() - 1)];
-                if !label_names.contains(&label_name) {
-                    errors.push((
-                        curr_symbol..(curr_symbol + line_len_raw),
-                        CompilationError::NoLabelWithSuchName {
-                            line: i,
-                            name: label_name.to_string(),
-                        },
-                    ));
+                if let Some(&addr) = self.line_addresses.last() {
+                    label_addresses.insert(label_name, addr);
                 }
-                label_addresses.insert(label_name, *self.line_addresses.last().unwrap());
             } else {
                 // Instruction
                 match self.process_instruction(line) {

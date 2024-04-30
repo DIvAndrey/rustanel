@@ -13,10 +13,7 @@ use eframe::egui;
 use eframe::egui::{include_image, vec2, Align2, Color32, RichText, Vec2, Visuals, Widget};
 use eframe::epaint::text::LayoutJob;
 use std::ops::Range;
-
-// fn main() {
-//     dbg!((-6) >> 1);
-// }
+use lazy_regex::{regex_captures, regex_is_match};
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
@@ -231,7 +228,7 @@ impl MyApp {
             }
         }
         if ui.button("Clear registers").clicked() {
-            for i in 0..4 {
+            for i in 0..5 {
                 self.program_executor.registers[i] = 0;
             }
         }
