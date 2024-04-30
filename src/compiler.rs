@@ -356,26 +356,23 @@ impl Compiler {
                 match self.process_instruction(line) {
                     Ok(binary) => {
                         let addr = *self.line_addresses.last().unwrap();
-                        match binary {
-                            Some((instruction, number)) => {
-                                self.program[addr] = (instruction >> 8) as u8;
-                                self.program[addr + 1] = instruction as u8;
-                                match number {
-                                    Some(number) => {
-                                        if addr + 1 >= self.program.len() {
-                                            errors.push((
-                                                curr_symbol..(curr_symbol + line_len_raw),
-                                                CompilationError::OutOfMemory { line: i },
-                                            ));
-                                        }
-                                        self.program[addr + 2] = (number >> 8) as u8;
-                                        self.program[addr + 3] = number as u8;
-                                        instruction_size = 4;
+                        if let Some((instruction, number)) = binary {
+                            self.program[addr] = (instruction >> 8) as u8;
+                            self.program[addr + 1] = instruction as u8;
+                            match number {
+                                Some(number) => {
+                                    if addr + 1 >= self.program.len() {
+                                        errors.push((
+                                            curr_symbol..(curr_symbol + line_len_raw),
+                                            CompilationError::OutOfMemory { line: i },
+                                        ));
                                     }
-                                    None => instruction_size = 2,
+                                    self.program[addr + 2] = (number >> 8) as u8;
+                                    self.program[addr + 3] = number as u8;
+                                    instruction_size = 4;
                                 }
+                                None => instruction_size = 2,
                             }
-                            None => {}
                         }
                     }
                     Err(e) => errors.push((curr_symbol..(curr_symbol + line_len_raw), e)),

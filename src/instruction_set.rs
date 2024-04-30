@@ -186,7 +186,7 @@ macro_rules! two_operands_instruction {
     };
 }
 
-pub const INSTRUCTION_SET: [InstructionInfo; 14] = [
+pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
     InstructionInfo {
         name: "nop",
         accepted_operands: AcceptedOperandTypes(0, 0),
@@ -269,6 +269,38 @@ pub const INSTRUCTION_SET: [InstructionInfo; 14] = [
         executor: one_operand_instruction!(|a: u16| !a),
     },
     InstructionInfo {
+        name: "shl",
+        accepted_operands: AcceptedOperandTypes(
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK,
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
+        ),
+        executor: two_operands_instruction!(|a: u16, b: u16| a.wrapping_shl(b as u32)),
+    },
+    InstructionInfo {
+        name: "shr",
+        accepted_operands: AcceptedOperandTypes(
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK,
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
+        ),
+        executor: two_operands_instruction!(|a: u16, b: u16| a.wrapping_shr(b as u32)),
+    },
+    InstructionInfo {
+        name: "rol",
+        accepted_operands: AcceptedOperandTypes(
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK,
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
+        ),
+        executor: two_operands_instruction!(|a: u16, b: u16| a.rotate_left(b as u32)),
+    },
+    InstructionInfo {
+        name: "ror",
+        accepted_operands: AcceptedOperandTypes(
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK,
+            REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
+        ),
+        executor: two_operands_instruction!(|a: u16, b: u16| a.rotate_right(b as u32)),
+    },
+    InstructionInfo {
         name: "jmp",
         accepted_operands: AcceptedOperandTypes(
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
@@ -290,13 +322,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 14] = [
             PORT_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: |executor, operands| {
-            let (port, data, size) = operands.two();
-            let data = executor.read_from(data)?;
-            executor.write_to(port, data)?;
-            executor.add_to_pc(size);
-            Ok(())
-        },
+        executor: two_operands_instruction!(|_a, b| b),
     },
     InstructionInfo {
         name: "read",
@@ -304,13 +330,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 14] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             PORT_MASK,
         ),
-        executor: |executor, operands| {
-            let (place, data, size) = operands.two();
-            let data = executor.read_from(data)?;
-            executor.write_to(place, data)?;
-            executor.add_to_pc(size);
-            Ok(())
-        },
+        executor: two_operands_instruction!(|_a, b| b),
     },
     InstructionInfo {
         name: "stop",

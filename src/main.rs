@@ -93,12 +93,10 @@ impl MyApp {
             } else {
                 include_image!("../data/on_light.png")
             }
+        } else if ui.visuals().dark_mode {
+            include_image!("../data/off_dark.png")
         } else {
-            if ui.visuals().dark_mode {
-                include_image!("../data/off_dark.png")
-            } else {
-                include_image!("../data/off_light.png")
-            }
+            include_image!("../data/off_light.png")
         };
         ui.add(
             egui::ImageButton::new(
@@ -179,12 +177,9 @@ impl MyApp {
 
     fn execute_next_instruction(&mut self) {
         self.error_popup_info = ErrorPopupInfo::None;
-        match self.program_executor.execute_next_instruction() {
-            Err(err) => {
-                self.program_executor.has_finished = true;
-                self.error_popup_info = ErrorPopupInfo::RuntimeError(err);
-            }
-            Ok(_) => {}
+        if let Err(err) = self.program_executor.execute_next_instruction() {
+            self.program_executor.has_finished = true;
+            self.error_popup_info = ErrorPopupInfo::RuntimeError(err);
         };
     }
 
