@@ -222,7 +222,7 @@ impl Compiler {
             return Ok(InstructionOperand::Reg(Self::str_reg_to_num(r)));
         }
         // Address in register
-        if let Some((_, r)) = regex_captures!(r"^\((r0|r1|r2|r3|sp)\)\)$", string) {
+        if let Some((_, r)) = regex_captures!(r"^\((r0|r1|r2|r3|sp)\)$", string) {
             return Ok(InstructionOperand::Addr(Self::str_reg_to_num(r)));
         }
         // Address in register with increment
@@ -282,18 +282,19 @@ impl Compiler {
                 found: operands.len(),
             });
         }
-        let operands = match &operands[..] {
-            &[] => InstructionOperands::Zero,
-            &[a] => InstructionOperands::One(self.parse_operand(a)?),
-            &[a, b] => InstructionOperands::Two(self.parse_operand(a)?, self.parse_operand(b)?),
+        let operands = match operands[..] {
+            [] => InstructionOperands::Zero,
+            [a] => InstructionOperands::One(self.parse_operand(a)?),
+            [a, b] => InstructionOperands::Two(self.parse_operand(a)?, self.parse_operand(b)?),
             _ => unreachable!(),
         };
-        let (operands, number) = self.convert_operands_to_binary(operands, info.accepted_operands)?;
+        let (operands, number) =
+            self.convert_operands_to_binary(operands, info.accepted_operands)?;
         Ok(Some((((code as u16) << 8) | operands as u16, number)))
     }
 
     fn preprocess_line(line: &str) -> &str {
-        line.trim().splitn(2, ';').next().unwrap()
+        line.trim().split(';').next().unwrap()
     }
 
     pub fn compile_code(&mut self, asm_code: &str) {
@@ -308,8 +309,7 @@ impl Compiler {
         for &(i, raw_line) in &lines {
             let raw_line_len = raw_line.chars().count() + 1;
             let line = Self::preprocess_line(raw_line);
-            if line.ends_with(':') {
-                let label_name = &line[..(line.len() - 1)];
+            if let Some(label_name) = line.strip_suffix(':') {
                 if regex_is_match!(r"^(?:\w)+$", label_name) {
                     if label_names.contains(label_name) {
                         errors.push((

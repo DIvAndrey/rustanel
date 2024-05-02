@@ -16,8 +16,8 @@ pub struct ProgramExecutor {
     pub curr_addr: usize,
 }
 
-impl ProgramExecutor {
-    pub fn new() -> Self {
+impl Default for ProgramExecutor {
+    fn default() -> Self {
         Self {
             registers: [0, 0, 0, 0, (MAX_PROGRAM_SIZE - 1) as u16],
             program_state_reg: 0,
@@ -28,6 +28,12 @@ impl ProgramExecutor {
             curr_addr: 0,
         }
     }
+}
+
+impl ProgramExecutor {
+    pub fn set_overflow(&mut self, overflow: bool) {
+        self.program_state_reg = (1 << 3) * (overflow as u16);
+    }
 
     pub fn prepare_for_a_new_run(&mut self) {
         self.curr_addr = 0;
@@ -37,10 +43,10 @@ impl ProgramExecutor {
 
     pub fn read_u8(&self, addr: u16) -> RuntimeResult<u8> {
         let addr = addr as usize;
-        Ok(*self
-            .memory
-            .get(addr)
-            .ok_or(RuntimeError::InvalidAddress(self.curr_addr, addr))?)
+        Ok(*self.memory.get(addr).ok_or(RuntimeError::InvalidAddress {
+            line: self.curr_addr,
+            address: addr,
+        })?)
     }
 
     pub fn write_u8(&mut self, addr: u16, new_val: u8) -> RuntimeResult<()> {
@@ -48,7 +54,10 @@ impl ProgramExecutor {
         *self
             .memory
             .get_mut(addr)
-            .ok_or(RuntimeError::InvalidAddress(self.curr_addr, addr))? = new_val;
+            .ok_or(RuntimeError::InvalidAddress {
+                line: self.curr_addr,
+                address: addr,
+            })? = new_val;
         Ok(())
     }
 
@@ -61,7 +70,7 @@ impl ProgramExecutor {
 
     pub fn write_u16(&mut self, addr: u16, new_val: u16) -> RuntimeResult<()> {
         self.write_u8(addr, (new_val >> 8) as u8)?;
-        self.write_u8(addr, new_val as u8)?;
+        self.write_u8(addr.wrapping_add(1), new_val as u8)?;
         Ok(())
     }
 
@@ -84,7 +93,10 @@ impl ProgramExecutor {
         } else if (accepted_operand_types & REG_MASK) != 0 && (0..5).contains(&operand) {
             InstructionOperand::Reg(operand)
         } else {
-            return Err(RuntimeError::InvalidOperand(self.curr_addr, operand));
+            return Err(RuntimeError::InvalidOperand {
+                line: self.curr_addr,
+                operand,
+            });
         })
     }
 
@@ -137,13 +149,15 @@ impl ProgramExecutor {
         })
     }
 
-    pub fn write_to(&mut self, place_to_write_to: InstructionOperand, num: u16) -> RuntimeResult<()> {
+    pub fn write_to(
+        &mut self,
+        place_to_write_to: InstructionOperand,
+        num: u16,
+    ) -> RuntimeResult<()> {
         match place_to_write_to {
             InstructionOperand::Reg(reg) => self.registers[reg as usize] = num,
-            InstructionOperand::Addr(reg) => self.write_u16(self.registers[reg as usize], num)?,
-            InstructionOperand::AddrInc(reg) => {
-                self.write_u16(self.registers[reg as usize], num)?;
-                self.registers[reg as usize] = self.registers[reg as usize].wrapping_add(2);
+            InstructionOperand::Addr(reg) | InstructionOperand::AddrInc(reg) => {
+                self.write_u16(self.registers[reg as usize], num)?
             }
             InstructionOperand::Port(port) => self.display[port as usize] = num,
             InstructionOperand::Number(_) => panic!("Cannot write to a number"),
@@ -161,21 +175,21 @@ impl ProgramExecutor {
 
 #[derive(Debug, Clone)]
 pub enum RuntimeError {
-    InvalidInstruction(usize, u8),
-    InvalidOperand(usize, u8),
-    InvalidAddress(usize, usize),
+    InvalidInstruction { line: usize, instruction: u8 },
+    InvalidOperand { line: usize, operand: u8 },
+    InvalidAddress { line: usize, address: usize },
 }
 
 impl Display for RuntimeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            RuntimeError::InvalidInstruction(line, instruction) => {
+            RuntimeError::InvalidInstruction { line, instruction } => {
                 write!(f, "0x{}: Invalid operand: `{instruction:x}`", line + 1)
             }
-            RuntimeError::InvalidOperand(line, operand) => {
+            RuntimeError::InvalidOperand { line, operand } => {
                 write!(f, "0x{}: Invalid operand: `{operand:x}`", line + 1)
             }
-            RuntimeError::InvalidAddress(line, address) => {
+            RuntimeError::InvalidAddress { line, address } => {
                 write!(f, "0x{}: Invalid address: `{address:x}`", line + 1)
             }
         }

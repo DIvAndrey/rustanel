@@ -45,16 +45,25 @@ struct MyApp {
 impl Default for MyApp {
     fn default() -> Self {
         Self {
+            //             code: "\
+            // mov r0, -1
+            // a:
+            // add r0, 1
+            // jmp @a
+            // stop
+            // "
             code: "\
 mov r0, -1
+mov r1, @b
 a:
 add r0, 1
+mov (r1)+, 0xFFFF
 jmp @a
 stop
-"
+b:"
             .into(),
             compiler: Compiler::build(),
-            program_executor: ProgramExecutor::new(),
+            program_executor: ProgramExecutor::default(),
             new_pixels_per_point: 2.5,
             last_info_panel_height: 0.0,
             error_popup_info: ErrorPopupInfo::None,

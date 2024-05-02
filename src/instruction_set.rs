@@ -1,6 +1,6 @@
-use std::fmt::Display;
 use crate::compiler::MAX_PROGRAM_SIZE;
 use crate::executor::{ProgramExecutor, RuntimeError, RuntimeResult};
+use std::fmt::Display;
 
 pub const NUMBER_OPERAND_CODE: u8 = 0xF;
 pub const REG_MASK: u8 = 0b00001;
@@ -166,8 +166,9 @@ macro_rules! one_operand_instruction {
     ($f:expr) => {
         |executor: &mut ProgramExecutor, operands: InstructionOperands| {
             let (op1, size) = operands.one();
-            let res = ($f)(executor.read_from(op1)?);
+            let (res, overflow) = ($f)(executor.read_from(op1)?);
             executor.write_to(op1, res)?;
+            executor.set_overflow(overflow);
             executor.add_to_pc(size);
             Ok(())
         }
@@ -178,8 +179,9 @@ macro_rules! two_operands_instruction {
     ($f:expr) => {
         |executor: &mut ProgramExecutor, operands: InstructionOperands| {
             let (op1, op2, size) = operands.two();
-            let res = ($f)(executor.read_from(op1)?, executor.read_from(op2)?);
+            let (res, overflow) = ($f)(executor.read_from(op1)?, executor.read_from(op2)?);
             executor.write_to(op1, res)?;
+            executor.set_overflow(overflow);
             executor.add_to_pc(size);
             Ok(())
         }
@@ -202,7 +204,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: two_operands_instruction!(|_a, b| b),
+        executor: two_operands_instruction!(|_a, b| (b, false)),
     },
     InstructionInfo {
         name: "add",
@@ -210,7 +212,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: two_operands_instruction!(u16::wrapping_add),
+        executor: two_operands_instruction!(u16::overflowing_add),
     },
     InstructionInfo {
         name: "sub",
@@ -218,7 +220,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: two_operands_instruction!(u16::wrapping_sub),
+        executor: two_operands_instruction!(u16::overflowing_sub),
     },
     InstructionInfo {
         name: "mul",
@@ -226,7 +228,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: two_operands_instruction!(u16::wrapping_mul),
+        executor: two_operands_instruction!(u16::overflowing_mul),
     },
     InstructionInfo {
         name: "div",
@@ -234,7 +236,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: two_operands_instruction!(u16::wrapping_div),
+        executor: two_operands_instruction!(u16::overflowing_div),
     },
     InstructionInfo {
         name: "and",
@@ -242,7 +244,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: two_operands_instruction!(|a, b| a & b),
+        executor: two_operands_instruction!(|a, b| (a & b, false)),
     },
     InstructionInfo {
         name: "or",
@@ -250,7 +252,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: two_operands_instruction!(|a, b| a | b),
+        executor: two_operands_instruction!(|a, b| (a | b, false)),
     },
     InstructionInfo {
         name: "xor",
@@ -258,15 +260,12 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: two_operands_instruction!(|a, b| a ^ b),
+        executor: two_operands_instruction!(|a, b| (a ^ b, false)),
     },
     InstructionInfo {
         name: "not",
-        accepted_operands: AcceptedOperandTypes(
-            REG_MASK | ADDR_MASK | ADDR_INC_MASK,
-            0,
-        ),
-        executor: one_operand_instruction!(|a: u16| !a),
+        accepted_operands: AcceptedOperandTypes(REG_MASK | ADDR_MASK | ADDR_INC_MASK, 0),
+        executor: one_operand_instruction!(|a: u16| (!a, false)),
     },
     InstructionInfo {
         name: "shl",
@@ -274,7 +273,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: two_operands_instruction!(|a: u16, b: u16| a.wrapping_shl(b as u32)),
+        executor: two_operands_instruction!(|a: u16, b: u16| a.overflowing_shl(b as u32)),
     },
     InstructionInfo {
         name: "shr",
@@ -282,7 +281,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: two_operands_instruction!(|a: u16, b: u16| a.wrapping_shr(b as u32)),
+        executor: two_operands_instruction!(|a: u16, b: u16| a.overflowing_shr(b as u32)),
     },
     InstructionInfo {
         name: "rol",
@@ -290,7 +289,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: two_operands_instruction!(|a: u16, b: u16| a.rotate_left(b as u32)),
+        executor: two_operands_instruction!(|a: u16, b: u16| (a.rotate_left(b as u32), false)),
     },
     InstructionInfo {
         name: "ror",
@@ -298,8 +297,21 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: two_operands_instruction!(|a: u16, b: u16| a.rotate_right(b as u32)),
+        executor: two_operands_instruction!(|a: u16, b: u16| (a.rotate_right(b as u32), false)),
     },
+    // InstructionInfo {
+    //     name: "cmp",
+    //     accepted_operands: AcceptedOperandTypes(
+    //         REG_MASK | ADDR_MASK | ADDR_INC_MASK,
+    //         REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
+    //     ),
+    //     executor: |executor, operands| {
+    //         let (op, size) = operands.two();
+    //
+    //         executor.add_to_pc(size);
+    //         Ok(())
+    //     },
+    // },
     InstructionInfo {
         name: "jmp",
         accepted_operands: AcceptedOperandTypes(
@@ -310,7 +322,10 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             let (op, _) = operands.one();
             let addr = executor.read_from(op)? as usize;
             if addr >= MAX_PROGRAM_SIZE {
-                return Err(RuntimeError::InvalidAddress(executor.curr_addr, addr));
+                return Err(RuntimeError::InvalidAddress {
+                    line: executor.curr_addr,
+                    address: addr,
+                });
             }
             executor.curr_addr = addr;
             Ok(())
@@ -322,15 +337,12 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             PORT_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: two_operands_instruction!(|_a, b| b),
+        executor: two_operands_instruction!(|_a, b| (b, false)),
     },
     InstructionInfo {
         name: "read",
-        accepted_operands: AcceptedOperandTypes(
-            REG_MASK | ADDR_MASK | ADDR_INC_MASK,
-            PORT_MASK,
-        ),
-        executor: two_operands_instruction!(|_a, b| b),
+        accepted_operands: AcceptedOperandTypes(REG_MASK | ADDR_MASK | ADDR_INC_MASK, PORT_MASK),
+        executor: two_operands_instruction!(|_a, b| (b, false)),
     },
     InstructionInfo {
         name: "stop",
