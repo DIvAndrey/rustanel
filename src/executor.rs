@@ -127,11 +127,17 @@ impl ProgramExecutor {
             return Ok(());
         }
         let instruction_code = self.read_u8(self.curr_addr as u16)?;
-        let InstructionInfo {
+        let Some(InstructionInfo {
             accepted_operands,
             executor,
             ..
-        } = &INSTRUCTION_SET[instruction_code as usize];
+        }) = &INSTRUCTION_SET.get(instruction_code as usize)
+        else {
+            return Err(RuntimeError::InvalidInstruction {
+                line: self.curr_addr,
+                instruction: instruction_code,
+            });
+        };
         executor(self, self.get_instruction_operands(*accepted_operands)?)
     }
 
@@ -184,13 +190,13 @@ impl Display for RuntimeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             RuntimeError::InvalidInstruction { line, instruction } => {
-                write!(f, "0x{}: Invalid operand: `{instruction:x}`", line + 1)
+                write!(f, "line {}: Invalid instruction: `{instruction:x}`", line + 1)
             }
             RuntimeError::InvalidOperand { line, operand } => {
-                write!(f, "0x{}: Invalid operand: `{operand:x}`", line + 1)
+                write!(f, "line {}: Invalid operand: `{operand:x}`", line + 1)
             }
             RuntimeError::InvalidAddress { line, address } => {
-                write!(f, "0x{}: Invalid address: `{address:x}`", line + 1)
+                write!(f, "line {}: Invalid address: `{address:x}`", line + 1)
             }
         }
     }

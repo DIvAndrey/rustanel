@@ -192,7 +192,7 @@ impl MyApp {
         };
     }
 
-    fn are_there_compilation_errors(&mut self) -> bool {
+    fn compilation_failed(&mut self) -> bool {
         if let Some(err) = self.compiler.errors.first() {
             self.program_executor.has_finished = true;
             self.error_popup_info = ErrorPopupInfo::CompilationError(err.1.clone());
@@ -202,29 +202,35 @@ impl MyApp {
     }
 
     fn build_run_debug_buttons(&mut self, ui: &mut egui::Ui) {
+        let is_running =
+            !self.program_executor.has_finished && !self.program_executor.is_in_debug_mode;
         if ui.button("Build").clicked() {
             self.program_executor.is_in_debug_mode = false;
             self.program_executor.has_finished = true;
-            if !self.are_there_compilation_errors() {
-                self.program_executor.memory = self.compiler.program.clone();
+            if !self.compilation_failed() {
+                self.program_executor.memory = self.compiler.program;
             }
         }
-        if ui.button("Run").clicked() {
+        if !is_running && ui.button("Run").clicked() {
             self.program_executor.is_in_debug_mode = false;
             self.program_executor.prepare_for_a_new_run();
-            if !self.are_there_compilation_errors() {
-                self.program_executor.memory = self.compiler.program.clone();
+            if !self.compilation_failed() {
+                self.program_executor.memory = self.compiler.program;
+                self.execute_next_instruction();
             }
-            self.execute_next_instruction();
+        }
+        if is_running && ui.button("Stop").clicked() {
+            self.program_executor.is_in_debug_mode = false;
+            self.program_executor.has_finished = true;
         }
         if ui.button("Step over").clicked() {
             if (self.program_executor.has_finished || !self.program_executor.is_in_debug_mode)
-                && !self.are_there_compilation_errors()
+                && !self.compilation_failed()
             {
                 self.program_executor.is_in_debug_mode = true;
                 self.program_executor.prepare_for_a_new_run();
-                if !self.are_there_compilation_errors() {
-                    self.program_executor.memory = self.compiler.program.clone();
+                if !self.compilation_failed() {
+                    self.program_executor.memory = self.compiler.program;
                 }
             } else {
                 self.execute_next_instruction();
@@ -235,7 +241,7 @@ impl MyApp {
                 self.program_executor.registers[i] = 0;
             }
         }
-        if !self.program_executor.has_finished && !self.program_executor.is_in_debug_mode {
+        if is_running {
             self.execute_next_instruction();
         }
     }
