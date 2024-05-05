@@ -323,7 +323,7 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             let addr = executor.read_from(op)? as usize;
             if addr >= MAX_PROGRAM_SIZE {
                 return Err(RuntimeError::InvalidAddress {
-                    line: executor.curr_addr,
+                    err_address: executor.curr_addr,
                     address: addr,
                 });
             }

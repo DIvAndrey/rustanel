@@ -23,7 +23,7 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         "Rustanel – a rusty panel with light bulbs",
         options,
-        Box::new(|_cc| Box::<MyApp>::default()),
+        Box::new(|_cc| Box::<App>::default()),
     )
 }
 
@@ -33,45 +33,51 @@ pub enum ErrorPopupInfo {
     None,
 }
 
-struct MyApp {
+struct App {
     code: String,
     compiler: Compiler,
     program_executor: ProgramExecutor,
     new_pixels_per_point: f32,
     last_info_panel_height: f32,
     error_popup_info: ErrorPopupInfo,
+    ticks_per_second: f32,
+    last_instruction_time: f32,
+    start_time: web_time::Instant,
 }
 
-impl Default for MyApp {
+impl Default for App {
     fn default() -> Self {
         Self {
-            //             code: "\
-            // mov r0, -1
-            // a:
-            // add r0, 1
-            // jmp @a
-            // stop
-            // "
-            code: "\
-mov r0, -1
-mov r1, @b
+                        code: "\
+mov r0, 1
 a:
-add r0, 1
-mov (r1)+, 0xFFFF
+mul r0, 3
 jmp @a
 stop
-b:"
+            "
+//             code: "\
+// mov r0, -1
+// mov r1, @b
+// a:
+// add r0, 1
+// mov (r1)+, 0xFFFF
+// jmp @a
+// stop
+// b:"
             .into(),
             compiler: Compiler::build(),
             program_executor: ProgramExecutor::default(),
             new_pixels_per_point: 2.5,
             last_info_panel_height: 0.0,
             error_popup_info: ErrorPopupInfo::None,
+            ticks_per_second: 10.0,
+            last_instruction_time: 0.0,
+            start_time: web_time::Instant::now(),
         }
     }
 }
 
-impl MyApp {
+impl App {
     fn code_editor_ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -201,6 +207,20 @@ impl MyApp {
         false
     }
 
+    fn get_required_ticks_and_update(&mut self) -> i32 {
+        let elapsed_time = self.start_time.elapsed().as_secs_f32() - self.last_instruction_time;
+        let iters = self.ticks_per_second * elapsed_time.max(0.0);
+        let res = iters.floor();
+        self.last_instruction_time += res / self.ticks_per_second;
+        res as i32
+    }
+
+    fn execute_instructions(&mut self) {
+        for _ in 0..self.get_required_ticks_and_update() {
+            self.execute_next_instruction();
+        }
+    }
+
     fn build_run_debug_buttons(&mut self, ui: &mut egui::Ui) {
         let is_running =
             !self.program_executor.has_finished && !self.program_executor.is_in_debug_mode;
@@ -216,7 +236,7 @@ impl MyApp {
             self.program_executor.prepare_for_a_new_run();
             if !self.compilation_failed() {
                 self.program_executor.memory = self.compiler.program;
-                self.execute_next_instruction();
+                self.execute_instructions();
             }
         }
         if is_running && ui.button("Stop").clicked() {
@@ -233,16 +253,18 @@ impl MyApp {
                     self.program_executor.memory = self.compiler.program;
                 }
             } else {
-                self.execute_next_instruction();
+                self.execute_instructions();
             }
         }
         if ui.button("Clear registers").clicked() {
-            for i in 0..5 {
+            for i in 0..4 {
                 self.program_executor.registers[i] = 0;
             }
+            self.program_executor.registers[4] = (MAX_PROGRAM_SIZE - 1) as u16;
+            self.program_executor.program_state_reg = 0;
         }
         if is_running {
-            self.execute_next_instruction();
+            self.execute_instructions();
         }
     }
 
@@ -271,14 +293,21 @@ impl MyApp {
             self.build_run_debug_buttons(ui);
         });
         ui.end_row();
-        egui::Grid::new("Settings and info")
-            .min_row_height(0.0)
-            .min_col_width(0.0)
-            .spacing(vec2(12.0, 4.0))
-            .show(ui, |ui| {
-                self.draw_registers_grid(ui);
+        ui.horizontal(|ui| {
+            egui::Grid::new("Settings and info")
+                .min_row_height(0.0)
+                .min_col_width(0.0)
+                .spacing(vec2(12.0, 4.0))
+                .show(ui, |ui| {
+                    self.draw_registers_grid(ui);
+                });
+            ui.spacing();
+            ui.vertical(|ui| {
+                ui.label(RichText::new("speed").size(8.0));
+                ui.add(egui::Slider::new(&mut self.ticks_per_second, 1.0..=1e4).vertical().logarithmic(true));
             });
-        self.error_messages_list_ui(ui, &errors);
+        });
+        self.error_messages_list_ui(ui, errors);
     }
 
     fn error_messages_list_ui(&mut self, ui: &mut egui::Ui, errors: &ErrorsHighlightInfo) {
@@ -368,7 +397,7 @@ impl MyApp {
     }
 }
 
-impl eframe::App for MyApp {
+impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.show_error_popup(ctx);
         let theme = CodeTheme::from_memory(ctx);
