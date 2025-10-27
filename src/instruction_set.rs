@@ -236,7 +236,11 @@ pub const INSTRUCTION_SET: [InstructionInfo; 18] = [
             REG_MASK | ADDR_MASK | ADDR_INC_MASK,
             REG_MASK | ADDR_MASK | ADDR_INC_MASK | NUMBER_MASK,
         ),
-        executor: two_operands_instruction!(u16::overflowing_div),
+        executor: two_operands_instruction!(|a, b| if b != 0 {
+            u16::overflowing_div(a, b)
+        } else {
+            (0, true)
+        }),
     },
     InstructionInfo {
         name: "and",
