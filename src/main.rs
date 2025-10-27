@@ -16,7 +16,10 @@ use std::ops::Range;
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
-        // initial_window_size: Some(vec2(1280.0, 960.0)), TODO
+        viewport: egui::ViewportBuilder::default()
+            .with_app_id("rustanel")
+            .with_active(true)
+            .with_maximized(true),
         renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
@@ -37,7 +40,6 @@ struct App {
     code: String,
     compiler: Compiler,
     program_executor: ProgramExecutor,
-    new_pixels_per_point: f32,
     last_info_panel_height: f32,
     error_popup_info: ErrorPopupInfo,
     ticks_per_second: f32,
@@ -48,26 +50,25 @@ struct App {
 impl Default for App {
     fn default() -> Self {
         Self {
-            code: "\
-mov r0, 1
-a:
-mul r0, 3
-jmp @a
-stop
-            "
-            //             code: "\
-            // mov r0, -1
-            // mov r1, @b
-            // a:
-            // add r0, 1
-            // mov (r1)+, 0xFFFF
-            // jmp @a
-            // stop
-            // b:"
-            .into(),
+//             code: "\
+// mov r0, 1
+// a:
+// mul r0, 3
+// wrt p0, r0
+// jmp @a
+// stop"
+                            code: "\
+                mov r0, -1
+                mov r1, @b
+                a:
+                add r0, 1
+                mov (r1)+, 0xFFFF
+                jmp @a
+                stop
+                b:"
+                .into(),
             compiler: Compiler::build(),
             program_executor: ProgramExecutor::default(),
-            new_pixels_per_point: 2.5,
             last_info_panel_height: 0.0,
             error_popup_info: ErrorPopupInfo::None,
             ticks_per_second: 10.0,
@@ -114,10 +115,8 @@ impl App {
             include_image!("../data/off_light.png")
         };
         ui.add(
-            egui::Button::image(
-                egui::Image::new(image).fit_to_exact_size(Vec2::splat(lamp_size)),
-            )
-            .frame(false),
+            egui::Button::image(egui::Image::new(image).fit_to_exact_size(Vec2::splat(lamp_size)))
+                .frame(false),
         )
     }
 
@@ -137,7 +136,6 @@ impl App {
                         &format!("{space}P{i}"),
                         lamp_size * 0.7,
                     ));
-                    ui.add_space(2.0);
                     for j in 0..16 {
                         let response = self.draw_lamp(
                             ui,
@@ -164,14 +162,14 @@ impl App {
             &bits[12..16]
         );
         let hex = format!("{val:#06x}")[2..].to_string();
-        let unsigned = val.to_string();
-        let signed = (val as i16).to_string();
+        let unsigned = format!("{:5}", val);
+        let signed = format!("{:6}", val as i16);
         ui.label(Self::get_monospace(name, 10.0).strong());
         ui.label(Self::get_monospace(&bits, 10.0));
         ui.label(Self::get_monospace(&hex, 10.0));
         ui.label(Self::get_monospace(&unsigned, 10.0));
         ui.label(Self::get_monospace(&signed, 10.0));
-        ui.end_row()
+        ui.end_row();
     }
 
     fn draw_registers_grid(&mut self, ui: &mut egui::Ui) {
@@ -179,7 +177,7 @@ impl App {
         ui.label(RichText::new("binary").size(8.0));
         ui.label(RichText::new("hex").size(8.0));
         ui.label(RichText::new("unsigned").size(8.0));
-        ui.label(RichText::new("signed").size(8.0));
+        ui.label(RichText::new(" signed").size(8.0));
         ui.end_row();
         for i in 0..4 {
             self.draw_register_info_row(ui, &format!("R{i}"), self.program_executor.registers[i]);
@@ -249,9 +247,7 @@ impl App {
             {
                 self.program_executor.is_in_debug_mode = true;
                 self.program_executor.prepare_for_a_new_run();
-                if !self.compilation_failed() {
-                    self.program_executor.memory = self.compiler.program;
-                }
+                self.program_executor.memory = self.compiler.program;
             } else {
                 self.execute_instructions();
             }
@@ -272,10 +268,6 @@ impl App {
         let mut is_dark_mode = ui.ctx().style().visuals.dark_mode;
         ui.horizontal(|ui| {
             ui.label("Ui scale:");
-            let response = ui.add(egui::Slider::new(&mut self.new_pixels_per_point, 0.5..=4.0));
-            if !response.is_pointer_button_down_on() {
-                ui.ctx().set_pixels_per_point(self.new_pixels_per_point);
-            }
             ui.separator();
             ui.label("Theme:");
             ui.selectable_value(&mut is_dark_mode, false, "☀ Light");
@@ -348,7 +340,7 @@ impl App {
         }
     }
 
-    fn get_binary_viewer_rows(&self, rows_range: Range<usize>, theme: &CodeTheme) -> LayoutJob {
+    fn get_hex_viewer_rows(&self, rows_range: Range<usize>, theme: &CodeTheme) -> LayoutJob {
         let mut layout_job = LayoutJob::default();
         layout_job.text.reserve(rows_range.len() * 8);
         let range = (rows_range.start * 8)..(rows_range.end * 8).min(MAX_PROGRAM_SIZE);
@@ -380,19 +372,21 @@ impl App {
         layout_job
     }
 
-    fn binary_viewer_ui(&self, ui: &mut egui::Ui, theme: &CodeTheme) {
+    fn hex_viewer_ui(&self, ui: &mut egui::Ui, theme: &CodeTheme) {
         ui.push_id("Binary code viewer", |ui| {
             egui::ScrollArea::vertical()
                 .min_scrolled_height(ui.available_height())
                 .show_rows(ui, 8.0, MAX_PROGRAM_SIZE / 8, |ui, rows_range| {
                     let mut layout_job =
-                        self.get_binary_viewer_rows(rows_range.start..(rows_range.end + 5), theme);
+                        self.get_hex_viewer_rows(rows_range.start..(rows_range.end + 5), theme);
                     ui.add(
                         egui::TextEdit::multiline(&mut layout_job.clone().text.as_str())
-                            .layouter(&mut |ui: &egui::Ui, _: &dyn egui::TextBuffer, wrap_width: f32| {
-                                layout_job.wrap.max_width = wrap_width;
-                                ui.fonts_mut(|f| f.layout_job(layout_job.clone()))
-                            })
+                            .layouter(
+                                &mut |ui: &egui::Ui, _: &dyn egui::TextBuffer, wrap_width: f32| {
+                                    layout_job.wrap.max_width = wrap_width;
+                                    ui.fonts_mut(|f| f.layout_job(layout_job.clone()))
+                                },
+                            )
                             .code_editor()
                             .desired_rows(1),
                     );
@@ -410,7 +404,7 @@ impl eframe::App for App {
         egui::TopBottomPanel::top("Light bulbs and registers")
             .resizable(true)
             .min_height(self.last_info_panel_height)
-            .default_height(256.0)
+            .default_height(128.0)
             .show(ctx, |ui| {
                 let available = ui.available_size();
                 let panel_size = available.y.min(available.x * 0.5);
@@ -435,7 +429,7 @@ impl eframe::App for App {
             theme.clone().store_in_memory(ui.ctx());
             ui.horizontal_top(|ui| {
                 self.code_editor_ui(ui, &theme, &self.compiler.errors.clone());
-                self.binary_viewer_ui(ui, &theme);
+                self.hex_viewer_ui(ui, &theme);
             });
         });
         if !self.program_executor.has_finished && !self.program_executor.is_in_debug_mode {
