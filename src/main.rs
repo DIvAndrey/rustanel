@@ -16,14 +16,14 @@ use std::ops::Range;
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
-        initial_window_size: Some(vec2(1280.0, 960.0)),
+        // initial_window_size: Some(vec2(1280.0, 960.0)), TODO
         renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
     eframe::run_native(
         "Rustanel – a rusty panel with light bulbs",
         options,
-        Box::new(|_cc| Box::<App>::default()),
+        Box::new(|_cc| Ok(Box::<App>::default())),
     )
 }
 
@@ -48,22 +48,22 @@ struct App {
 impl Default for App {
     fn default() -> Self {
         Self {
-                        code: "\
+            code: "\
 mov r0, 1
 a:
 mul r0, 3
 jmp @a
 stop
             "
-//             code: "\
-// mov r0, -1
-// mov r1, @b
-// a:
-// add r0, 1
-// mov (r1)+, 0xFFFF
-// jmp @a
-// stop
-// b:"
+            //             code: "\
+            // mov r0, -1
+            // mov r1, @b
+            // a:
+            // add r0, 1
+            // mov (r1)+, 0xFFFF
+            // jmp @a
+            // stop
+            // b:"
             .into(),
             compiler: Compiler::build(),
             program_executor: ProgramExecutor::default(),
@@ -85,10 +85,10 @@ impl App {
         errors: &ErrorsHighlightInfo,
     ) {
         theme.apply_bg_color(ui);
-        let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
-            let mut layout_job = highlight(ui.ctx(), theme, string, errors);
+        let mut layouter = |ui: &egui::Ui, string: &dyn egui::TextBuffer, wrap_width: f32| {
+            let mut layout_job = highlight(ui.ctx(), theme, string.as_str(), errors);
             layout_job.wrap.max_width = wrap_width;
-            ui.fonts(|f| f.layout_job(layout_job))
+            ui.fonts_mut(|f| f.layout_job(layout_job))
         };
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.add(
@@ -114,7 +114,7 @@ impl App {
             include_image!("../data/off_light.png")
         };
         ui.add(
-            egui::ImageButton::new(
+            egui::Button::image(
                 egui::Image::new(image).fit_to_exact_size(Vec2::splat(lamp_size)),
             )
             .frame(false),
@@ -304,7 +304,11 @@ impl App {
             ui.spacing();
             ui.vertical(|ui| {
                 ui.label(RichText::new("speed").size(8.0));
-                ui.add(egui::Slider::new(&mut self.ticks_per_second, 1.0..=1e4).vertical().logarithmic(true));
+                ui.add(
+                    egui::Slider::new(&mut self.ticks_per_second, 1.0..=1e4)
+                        .vertical()
+                        .logarithmic(true),
+                );
             });
         });
         self.error_messages_list_ui(ui, errors);
@@ -385,9 +389,9 @@ impl App {
                         self.get_binary_viewer_rows(rows_range.start..(rows_range.end + 5), theme);
                     ui.add(
                         egui::TextEdit::multiline(&mut layout_job.clone().text.as_str())
-                            .layouter(&mut |ui: &egui::Ui, _: &str, wrap_width: f32| {
+                            .layouter(&mut |ui: &egui::Ui, _: &dyn egui::TextBuffer, wrap_width: f32| {
                                 layout_job.wrap.max_width = wrap_width;
-                                ui.fonts(|f| f.layout_job(layout_job.clone()))
+                                ui.fonts_mut(|f| f.layout_job(layout_job.clone()))
                             })
                             .code_editor()
                             .desired_rows(1),

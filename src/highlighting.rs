@@ -17,17 +17,6 @@ pub fn highlight(
     code: &str,
     errors: &ErrorsHighlightInfo,
 ) -> LayoutJob {
-    impl egui::util::cache::ComputerMut<(&CodeTheme, &str, &ErrorsHighlightInfo), LayoutJob>
-        for Highlighter
-    {
-        fn compute(
-            &mut self,
-            (theme, code, errors): (&CodeTheme, &str, &ErrorsHighlightInfo),
-        ) -> LayoutJob {
-            self.highlight(theme, code, errors)
-        }
-    }
-
     type HighlightCache = egui::util::cache::FrameCache<LayoutJob, Highlighter>;
 
     ctx.memory_mut(|mem| {
@@ -35,6 +24,17 @@ pub fn highlight(
             .cache::<HighlightCache>()
             .get((theme, code, errors))
     })
+}
+
+impl egui::util::cache::ComputerMut<(&CodeTheme, &str, &ErrorsHighlightInfo), LayoutJob>
+    for Highlighter
+{
+    fn compute(
+        &mut self,
+        (theme, code, errors): (&CodeTheme, &str, &ErrorsHighlightInfo),
+    ) -> LayoutJob {
+        self.highlight(theme, code, errors)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Enum)]
