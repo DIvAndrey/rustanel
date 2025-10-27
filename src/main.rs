@@ -12,6 +12,7 @@ use crate::highlighting::{highlight, CodeTheme, TokenType};
 use eframe::egui;
 use eframe::egui::{include_image, vec2, Align2, Color32, RichText, Vec2, Visuals, Widget};
 use eframe::epaint::text::LayoutJob;
+use eframe::wgpu::rwh::HasWindowHandle;
 use std::ops::Range;
 
 fn main() -> Result<(), eframe::Error> {
@@ -397,6 +398,10 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.last_info_panel_height == 0.0 {
+            // On first frame
+            ctx.set_zoom_factor(2.0);
+        }
         self.show_error_popup(ctx);
         let theme = CodeTheme::from_memory(ctx);
         egui_extras::install_image_loaders(ctx);
